@@ -79,4 +79,16 @@ function getOfficesByUnit($conn, $unit_id, $activeOnly = true) {
     }
     return $offices;
 }
+
+function isLoggedIn() {
+    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+}
+
+function getUserName() {
+    if(isset($_SESSION['username'])) {
+        return htmlspecialchars($_SESSION['username']);
+    } else {
+        return 'WALA NI GANA';
+    }
+}
 ?>

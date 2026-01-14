@@ -1,9 +1,49 @@
 <?php
+
 session_start();
 
+if (isset($_SESSION['user_id'])) {
+	header('Location: homepage.php');
+	exit;
+}
 
+$conn = mysqli_connect("localhost","root","","drmc_intercom");
+$success = "";
+$error = "";
+
+if (isset($_GET['message'])) {
+	$success = htmlspecialchars(str_replace('+',' ', $_GET['message']));
+}
+
+if($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $email = $_POST['username'];
+    $password = $_POST['password'];
+
+    $stmt = $conn->prepare("select user_id, username, password from users where username = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $result =  $stmt->get_result();
+
+    if($result->num_rows == 1) {
+        $user = $result->fetch_assoc();
+
+        if (password_verify($password, $user['password'])) {
+            $_SESSION['user_id'] = $user['user_id'];
+			$_SESSION['username'] = $user['username'];
+
+			$success = 'Login successfull! Redirecting...';
+			echo '<script>setTimeout(() => window.location.href = "homepage.php", 1500)</script>';
+        } else {
+            $error = "Wrong password!";
+        }
+    } else {
+        $error = "Username not found!";
+    }
+    $stmt->close();
+}
 
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -12,12 +52,10 @@ session_start();
 <title>Intercom Directory</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-/* --- GENERAL --- */
 * { box-sizing:border-box; margin:0; padding:0; font-family:"Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
 body { min-height:100vh; min-height: 100vh;
             display: flex;
             flex-direction: column;
-            /* Hospital background */
             background: url('drmc.jpg') no-repeat center center fixed;
             background-size: cover;
             position: relative; }
@@ -32,7 +70,6 @@ body::before {
             z-index: 0;
         }
 
-/* HEADER */
 .header {
     height:90px;
     display:flex;
@@ -47,55 +84,6 @@ body::before {
 .logo { display:flex; align-items:center; gap:12px; color:#2b6cb0; font-weight:600; font-size:28px; }
 .logo img { width:70px; height:auto; }
 
-/* HAMBURGER MENU */
-.hamburger {
-    display:flex;
-    flex-direction:column;
-    justify-content:space-between;
-    width:30px;
-    height:22px;
-    cursor:pointer;
-}
-.hamburger span {
-    display:block;
-    height:4px;
-    background:#2b6cb0;
-    border-radius:2px;
-    transition: all 0.3s ease;
-}
-.hamburger.active span:nth-child(1){ transform: rotate(45deg) translateY(9px); }
-.hamburger.active span:nth-child(2){ opacity:0; }
-.hamburger.active span:nth-child(3){ transform: rotate(-45deg) translateY(-9px); }
-
-/* SIDE MENU */
-.side-menu {
-    position:fixed;
-    top:0; left:-280px;
-    width:280px;
-    height:100%;
-    background:#2b6cb0;
-    color:#fff;
-    padding:80px 20px;
-    transition:left 0.3s ease;
-    z-index:3;
-    overflow-y:auto;
-}
-.side-menu.active { left:0; }
-.side-menu a, .side-menu select {
-    display:block;
-    margin-bottom:16px;
-    font-weight:500;
-    text-decoration:none;
-    color:#fff;
-    background:none;
-    border:none;
-    width:100%;
-    font-size:16px;
-}
-.side-menu a:hover { text-decoration:underline; }
-.side-menu select { padding:6px 8px; border-radius:4px; color:#2b6cb0; background:#fff; cursor:pointer; }
-
-/* MAIN CARD */
 .main { flex:1; display:flex; justify-content:center; align-items:center; padding:20px; position:relative; z-index:1; }
 .card {
     width: 100%;
@@ -122,69 +110,41 @@ input:focus { outline:none; border-color:#2b6cb0; }
 .create-btn { padding:12px; font-size:15px; font-weight:600; text-align:center; border-radius:6px; border:2px solid #2b6cb0; background:#fff; color:#2b6cb0; cursor:pointer; transition: all 0.3s ease; width:100%; display:inline-block; }
 .create-btn:hover { background:#2b6cb0; color:#fff; transform:translateY(-1px); }
 
-/* FOOTER */
 .footer { background-color:#2b6cb0; color:#fff; text-align:center; padding:15px 10px; font-size:13px; position:relative; z-index:1; }
 
-/* SCROLL FOR SIDE MENU IF CONTENT LARGE */
 .side-menu::-webkit-scrollbar { width:6px; }
 .side-menu::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.3); border-radius:3px; }
 </style>
 </head>
 <body>
 
-<!-- HEADER -->
 <div class="header">
     <div class="logo">
         <img src="hospitalLogo.png" alt="Hospital Logo">
         <span>DAVAO REGIONAL MEDICAL CENTER</span>
     </div>
-    
-    <div class="hamburger" id="hamburger">
-        <span></span>
-        <span></span>
-        <span></span>
-    </div>
 </div>
 
-<!-- SIDE MENU -->
-<div class="side-menu" id="sideMenu">
-    <a href="division.html">Division Page</a>
-    <select id="divisionSelect">
-        <option value="">Select Division </option>
-    </select>
-
-    <a href="department.html">Department Page</a>
-    <select id="departmentSelect" disabled>
-        <option value="">Select Department</option>
-    </select>
-
-    <a href="unit.html">Unit Page</a>
-    <select id="unitSelect" disabled>
-        <option value="">Select Unit</option>
-    </select>
-
-    <a href="office.html">Office Page</a>
-    <select id="officeSelect" disabled>
-        <option value="">Select Office</option>
-    </select>
-</div>
-
-<!-- MAIN LOGIN CARD -->
 <div class="main">
     <div class="card">
         <h2>Welcome</h2>
         <p>Please log in to continue</p>
 
-        <form action="homepage.php" method="POST">
+        <form method="POST">
             <label for="username" class="sr-only">Username</label>
-            <input id="username" type="text" placeholder="Username" required autocomplete="username">
+            <input id="username" type="text" name="username" required autocomplete="username">
 
             <label for="password" class="sr-only">Password</label>
-            <input id="password" type="password" placeholder="Password" required autocomplete="current-password">
+            <input id="password" type="password" name="password" placeholder="Password" required autocomplete="current-password">
 
             <button type="submit" class="login-btn">Log In</button>
         </form>
-
+        <?php if (isset($error)): ?>
+            <p style="color: red;"><?php echo $error; ?></p>
+        <?php endif; ?>
+		<?php if (isset($success)): ?>
+            <p style="color: green;"><?php echo $success; ?></p>
+        <?php endif; ?>
         <div class="actions">
             <div class="divider"></div>
             <a href="signup.php" class="create-btn">Create an Account</a>
@@ -192,46 +152,23 @@ input:focus { outline:none; border-color:#2b6cb0; }
     </div>
 </div>
 
-<!-- FOOTER -->
 <div class="footer">
     © 2026 Intercom Directory. All rights reserved.<br>
     Developed by TNTS Programming Students JT.DP.RR
 </div>
 
 <script>
-// Hamburger toggle
-const hamburger = document.getElementById('hamburger');
-const sideMenu = document.getElementById('sideMenu');
-hamburger.addEventListener('click', () => {
-    hamburger.classList.toggle('active');
-    sideMenu.classList.toggle('active');
-});
-
-// Sample hierarchical data
-const data = {
-    "Division A": {
-        "Dept 1": { "Unit I": ["Office Alpha","Office Beta"], "Unit II": ["Office Gamma"] },
-        "Dept 2": { "Unit III": ["Office Delta"] }
-    },
-    "Division B": {
-        "Dept 3": { "Unit IV": ["Office Epsilon","Office Zeta"] }
-    }
-};
-
-// Select elements
 const divisionSelect = document.getElementById('divisionSelect');
 const departmentSelect = document.getElementById('departmentSelect');
 const unitSelect = document.getElementById('unitSelect');
 const officeSelect = document.getElementById('officeSelect');
 
-// Populate divisions
 Object.keys(data).forEach(div => {
     let opt = document.createElement('option');
     opt.value = div; opt.textContent = div;
     divisionSelect.appendChild(opt);
 });
 
-// Populate departments based on division
 divisionSelect.addEventListener('change', () => {
     const div = divisionSelect.value;
     departmentSelect.innerHTML = '<option value="">-- Select Department --</option>';
@@ -246,7 +183,6 @@ divisionSelect.addEventListener('change', () => {
     });
 });
 
-// Populate units based on department
 departmentSelect.addEventListener('change', () => {
     const div = divisionSelect.value;
     const dept = departmentSelect.value;
@@ -260,7 +196,6 @@ departmentSelect.addEventListener('change', () => {
     });
 });
 
-// Populate offices based on unit
 unitSelect.addEventListener('change', () => {
     const div = divisionSelect.value;
     const dept = departmentSelect.value;
@@ -270,6 +205,12 @@ unitSelect.addEventListener('change', () => {
     if(div && dept && unit) data[div][dept][unit].forEach(off => {
         let opt = document.createElement('option'); opt.value=off; opt.textContent=off;
         officeSelect.appendChild(opt);
+    });
+});
+document.querySelectorAll('ul.nav li a').forEach(link => {
+    link.addEventListener('click', () => {
+        const nav = document.querySelector('ul.nav');      
+        nav.classList.remove('active');
     });
 });
 </script>
