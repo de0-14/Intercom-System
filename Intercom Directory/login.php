@@ -1,277 +1,220 @@
 <?php
 session_start();
 
+/* ================= DATABASE CONFIG ================= */
+$host = "localhost";
+$user = "root";
+$pass = "";
+$db   = "drmc_intercom";
 
+/* ================= CONNECT ================= */
+$conn = new mysqli($host, $user, $pass, $db);
+if ($conn->connect_error) {
+    die("Database connection failed");
+}
 
+/* ================= LOGIN LOGIC ================= */
+$error = "";
+
+if (isset($_POST['login'])) {
+    $username = trim($_POST['username']);
+    $password = trim($_POST['password']);
+
+    $stmt = $conn->prepare("SELECT user_id, username, password FROM users WHERE username = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows === 1) {
+        $row = $result->fetch_assoc();
+
+        if (password_verify($password, $row['password'])) {
+            $_SESSION['user_id'] = $row['id'];
+            $_SESSION['username'] = $row['username'];
+            header("Location: index.php");
+            exit;
+        } else {
+            $error = "Invalid username or password";
+        }
+    } else {
+        $error = "Invalid username or password";
+    }
+}
+
+/* ================= LOGOUT ================= */
+if (isset($_GET['logout'])) {
+    session_destroy();
+    header("Location: index.php");
+    exit;
+}
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">  
+<meta charset="UTF-8">
 <title>Intercom Directory</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-/* --- GENERAL --- */
-* { box-sizing:border-box; margin:0; padding:0; font-family:"Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
-body { min-height:100vh; min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            /* Hospital background */
-            background: url('drmc.jpg') no-repeat center center fixed;
-            background-size: cover;
-            position: relative; }
-body::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(237,244,252,0.6);
-            z-index: 0;
-        }
 
-/* HEADER */
-.header {
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:"Segoe UI",Tahoma,Verdana,sans-serif;}
+body{
+    min-height:100vh;
+    background:#edf4fc;
+    display:flex;
+    flex-direction:column;
+}
+.header{
     height:90px;
     display:flex;
     justify-content:space-between;
     align-items:center;
     padding:0 32px;
-    background-color:#ffffff;
+    background:#fff;
     border-bottom:1px solid #dde8f6;
-    position:relative;
-    z-index:2;
 }
-.logo { display:flex; align-items:center; gap:12px; color:#2b6cb0; font-weight:600; font-size:28px; }
-.logo img { width:70px; height:auto; }
+.logo{display:flex;align-items:center;gap:12px;color:#2b6cb0;font-size:26px;font-weight:600;}
+.hamburger{width:30px;height:22px;display:flex;flex-direction:column;justify-content:space-between;cursor:pointer;}
+.hamburger span{height:4px;background:#2b6cb0;border-radius:2px;transition:.3s;}
 
-/* HAMBURGER MENU */
-.hamburger {
-    display:flex;
-    flex-direction:column;
-    justify-content:space-between;
-    width:30px;
-    height:22px;
-    cursor:pointer;
-}
-.hamburger span {
-    display:block;
-    height:4px;
-    background:#2b6cb0;
-    border-radius:2px;
-    transition: all 0.3s ease;
-}
-.hamburger.active span:nth-child(1){ transform: rotate(45deg) translateY(9px); }
-.hamburger.active span:nth-child(2){ opacity:0; }
-.hamburger.active span:nth-child(3){ transform: rotate(-45deg) translateY(-9px); }
-
-/* SIDE MENU */
-.side-menu {
+.side-menu{
     position:fixed;
-    top:0; left:-280px;
-    width:280px;
+    top:0;
+    right:-320px;
+    width:320px;
     height:100%;
     background:#2b6cb0;
-    color:#fff;
-    padding:80px 20px;
-    transition:left 0.3s ease;
-    z-index:3;
-    overflow-y:auto;
+    padding:90px 20px;
+    transition:.3s;
 }
-.side-menu.active { left:0; }
-.side-menu a, .side-menu select {
-    display:block;
-    margin-bottom:16px;
-    font-weight:500;
-    text-decoration:none;
-    color:#fff;
-    background:none;
+.side-menu.active{right:0}
+
+.close-btn{
+    position:absolute;
+    top:20px;
+    right:20px;
+    width:40px;
+    height:40px;
+    border-radius:50%;
+    background:rgba(255,255,255,.2);
     border:none;
+    color:#fff;
+    font-size:24px;
+    cursor:pointer;
+}
+
+.auth-container{
+    position:absolute;
+    bottom:20px;
+    right:20px;
+    display:flex;
+    gap:10px;
+}
+.auth-btn{
+    padding:10px 16px;
+    border-radius:20px;
+    border:none;
+    cursor:pointer;
+    font-weight:600;
+}
+.login-btn{background:#fff;color:#2b6cb0}
+.signup-btn{background:#ffd54f;color:#2b6cb0}
+
+.main{
+    flex:1;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+.card{
     width:100%;
-    font-size:16px;
+    max-width:360px;
+    background:#fff;
+    padding:28px;
+    border-radius:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,.1);
 }
-.side-menu a:hover { text-decoration:underline; }
-.side-menu select { padding:6px 8px; border-radius:4px; color:#2b6cb0; background:#fff; cursor:pointer; }
-
-/* MAIN CARD */
-.main { flex:1; display:flex; justify-content:center; align-items:center; padding:20px; position:relative; z-index:1; }
-.card {
-    width: 100%;
-            max-width: 380px;
-            background-color: rgba(255,255,255,0.85); /* semi-transparent card */
-            border-radius: 12px;
-            padding: 28px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-            backdrop-filter: blur(6px); /* optional frosted glass effect */
-            -webkit-backdrop-filter: blur(6px);
-             background-color: rgba(255, 255, 255, 0.4); /* semi-transparent white */
-        border-radius: 12px;
-        padding: 28px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+input{
+    width:100%;
+    padding:12px;
+    margin-bottom:14px;
+    border-radius:6px;
+    border:1px solid #ccc;
 }
-h2 { text-align:center; margin-bottom:8px; color:#2b6cb0; font-size:22px; }
-p { text-align:center; margin-bottom:20px; font-size:14px; color:#666; }
-input { width:100%; padding:11px 12px; margin-bottom:14px; border-radius:6px; border:1px solid #ccd6e3; font-size:14px; }
-input:focus { outline:none; border-color:#2b6cb0; }
-.login-btn { width:100%; padding:12px; background-color:#2b6cb0; color:#fff; border:none; border-radius:6px; font-size:15px; font-weight:600; cursor:pointer; transition: all 0.3s ease; }
-.login-btn:hover { background-color:#1f4f8b; transform:translateY(-1px); }
-.actions { margin-top:18px; display:flex; flex-direction:column; gap:14px; }
-.divider { height:1px; background:#e2ebf6; margin-bottom:18px; }
-.create-btn { padding:12px; font-size:15px; font-weight:600; text-align:center; border-radius:6px; border:2px solid #2b6cb0; background:#fff; color:#2b6cb0; cursor:pointer; transition: all 0.3s ease; width:100%; display:inline-block; }
-.create-btn:hover { background:#2b6cb0; color:#fff; transform:translateY(-1px); }
-
-/* FOOTER */
-.footer { background-color:#2b6cb0; color:#fff; text-align:center; padding:15px 10px; font-size:13px; position:relative; z-index:1; }
-
-/* SCROLL FOR SIDE MENU IF CONTENT LARGE */
-.side-menu::-webkit-scrollbar { width:6px; }
-.side-menu::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.3); border-radius:3px; }
+.submit-btn{
+    width:100%;
+    padding:12px;
+    background:#2b6cb0;
+    color:#fff;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+}
+.error{text-align:center;color:red;margin-bottom:10px}
+.footer{
+    background:#2b6cb0;
+    color:#fff;
+    text-align:center;
+    padding:15px;
+    font-size:13px;
+}
 </style>
 </head>
+
 <body>
 
-<!-- HEADER -->
 <div class="header">
-    <div class="logo">
-        <img src="hospitalLogo.png" alt="Hospital Logo">
-        <span>DAVAO REGIONAL MEDICAL CENTER</span>
-    </div>
-    
+    <div class="logo">DAVAO REGIONAL MEDICAL CENTER</div>
     <div class="hamburger" id="hamburger">
-        <span></span>
-        <span></span>
-        <span></span>
+        <span></span><span></span><span></span>
     </div>
 </div>
 
-<!-- SIDE MENU -->
 <div class="side-menu" id="sideMenu">
-    <a href="division.html">Division Page</a>
-    <select id="divisionSelect">
-        <option value="">Select Division </option>
-    </select>
+    <button class="close-btn" id="closeMenu">×</button>
 
-    <a href="department.html">Department Page</a>
-    <select id="departmentSelect" disabled>
-        <option value="">Select Department</option>
-    </select>
+    <?php if(isset($_SESSION['username'])): ?>
+        <p style="color:white;">Logged in as <b><?= $_SESSION['username'] ?></b></p>
+        <a href="?logout=1" style="color:white;">Logout</a>
+    <?php endif; ?>
 
-    <a href="unit.html">Unit Page</a>
-    <select id="unitSelect" disabled>
-        <option value="">Select Unit</option>
-    </select>
-
-    <a href="office.html">Office Page</a>
-    <select id="officeSelect" disabled>
-        <option value="">Select Office</option>
-    </select>
-</div>
-
-<!-- MAIN LOGIN CARD -->
-<div class="main">
-    <div class="card">
-        <h2>Welcome</h2>
-        <p>Please log in to continue</p>
-
-        <form action="homepage.php" method="POST">
-            <label for="username" class="sr-only">Username</label>
-            <input id="username" type="text" placeholder="Username" required autocomplete="username">
-
-            <label for="password" class="sr-only">Password</label>
-            <input id="password" type="password" placeholder="Password" required autocomplete="current-password">
-
-            <button type="submit" class="login-btn">Log In</button>
-        </form>
-
-        <div class="actions">
-            <div class="divider"></div>
-            <a href="signup.php" class="create-btn">Create an Account</a>
-        </div>
+    <div class="auth-container">
+        <?php if(!isset($_SESSION['username'])): ?>
+            <button class="auth-btn login-btn" onclick="document.getElementById('loginCard').scrollIntoView()">Log In</button>
+            <button class="auth-btn signup-btn">Sign Up</button>
+        <?php endif; ?>
     </div>
 </div>
 
-<!-- FOOTER -->
+<div class="main" id="loginCard">
+    <div class="card">
+        <h2 style="text-align:center;color:#2b6cb0">
+            <?= isset($_SESSION['username']) ? "Welcome" : "Login" ?>
+        </h2>
+
+        <?php if(!isset($_SESSION['username'])): ?>
+            <?php if($error): ?><div class="error"><?= $error ?></div><?php endif; ?>
+            <form method="POST">
+                <input type="text" name="username" placeholder="Username" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button class="submit-btn" name="login">Log In</button>
+            </form>
+        <?php else: ?>
+            <p style="text-align:center;">You are logged in.</p>
+        <?php endif; ?>
+    </div>
+</div>
+
 <div class="footer">
-    © 2026 Intercom Directory. All rights reserved.<br>
-    Developed by TNTS Programming Students JT.DP.RR
+    © 2026 Intercom Directory
 </div>
 
 <script>
-// Hamburger toggle
-const hamburger = document.getElementById('hamburger');
-const sideMenu = document.getElementById('sideMenu');
-hamburger.addEventListener('click', () => {
-    hamburger.classList.toggle('active');
-    sideMenu.classList.toggle('active');
-});
+const hamburger=document.getElementById('hamburger');
+const sideMenu=document.getElementById('sideMenu');
+const closeMenu=document.getElementById('closeMenu');
 
-// Sample hierarchical data
-const data = {
-    "Division A": {
-        "Dept 1": { "Unit I": ["Office Alpha","Office Beta"], "Unit II": ["Office Gamma"] },
-        "Dept 2": { "Unit III": ["Office Delta"] }
-    },
-    "Division B": {
-        "Dept 3": { "Unit IV": ["Office Epsilon","Office Zeta"] }
-    }
-};
-
-// Select elements
-const divisionSelect = document.getElementById('divisionSelect');
-const departmentSelect = document.getElementById('departmentSelect');
-const unitSelect = document.getElementById('unitSelect');
-const officeSelect = document.getElementById('officeSelect');
-
-// Populate divisions
-Object.keys(data).forEach(div => {
-    let opt = document.createElement('option');
-    opt.value = div; opt.textContent = div;
-    divisionSelect.appendChild(opt);
-});
-
-// Populate departments based on division
-divisionSelect.addEventListener('change', () => {
-    const div = divisionSelect.value;
-    departmentSelect.innerHTML = '<option value="">-- Select Department --</option>';
-    unitSelect.innerHTML = '<option value="">-- Select Unit --</option>';
-    officeSelect.innerHTML = '<option value="">-- Select Office --</option>';
-    departmentSelect.disabled = !div;
-    unitSelect.disabled = true;
-    officeSelect.disabled = true;
-    if(div) Object.keys(data[div]).forEach(dept => {
-        let opt = document.createElement('option'); opt.value=dept; opt.textContent=dept;
-        departmentSelect.appendChild(opt);
-    });
-});
-
-// Populate units based on department
-departmentSelect.addEventListener('change', () => {
-    const div = divisionSelect.value;
-    const dept = departmentSelect.value;
-    unitSelect.innerHTML = '<option value="">-- Select Unit --</option>';
-    officeSelect.innerHTML = '<option value="">-- Select Office --</option>';
-    unitSelect.disabled = !dept;
-    officeSelect.disabled = true;
-    if(div && dept) Object.keys(data[div][dept]).forEach(unit => {
-        let opt = document.createElement('option'); opt.value=unit; opt.textContent=unit;
-        unitSelect.appendChild(opt);
-    });
-});
-
-// Populate offices based on unit
-unitSelect.addEventListener('change', () => {
-    const div = divisionSelect.value;
-    const dept = departmentSelect.value;
-    const unit = unitSelect.value;
-    officeSelect.innerHTML = '<option value="">-- Select Office --</option>';
-    officeSelect.disabled = !unit;
-    if(div && dept && unit) data[div][dept][unit].forEach(off => {
-        let opt = document.createElement('option'); opt.value=off; opt.textContent=off;
-        officeSelect.appendChild(opt);
-    });
-});
+hamburger.onclick=()=>sideMenu.classList.toggle('active');
+closeMenu.onclick=()=>sideMenu.classList.remove('active');
 </script>
 
 </body>
