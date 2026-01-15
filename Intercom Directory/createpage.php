@@ -1,7 +1,5 @@
 <?php
-require_once 'conn.php';
-
-
+require_once'conn.php';
 ?>
 
 <!DOCTYPE html>
@@ -9,7 +7,7 @@ require_once 'conn.php';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Create page</title>
     <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
@@ -31,6 +29,14 @@ require_once 'conn.php';
 			<?php endif; ?>
         </ul>
         </div>
+    </div>
+    <div class="content">
+        <ul class="choice">
+			<li id="create_division"><a href="createpage.php"> Create Divsion </a></li>
+			<li id="create_department"><a href="create_department.php"> Create Department </a></li>
+			<li id="create_unit"><a href="create_unit.php"> Create Unit </a></li>
+            <li id="create_office"><a href="create_office.php"> Create Office </a></li>
+		</ul>
     </div>
 </body>
 </html>
