@@ -1,5 +1,7 @@
 <?php
 require_once 'conn.php';
+
+
 ?>
 
 <!DOCTYPE html>
@@ -18,11 +20,11 @@ require_once 'conn.php';
         </div>
         <div>
             <ul class="nav">
-            <li id="nest"><a href="#"> Nest </a></li>
-			<li id="categories"><a href=""> Categories </a></li>
-			<li id="savedmangas"><a href=""> Saved Mangas </a></li>
-			<li id="profile"><a href=""> Profile </a></li>
-			<?php if (isLoggedIn()) : ?>
+            <li id="home"><a href="homepage.php"> Home page </a></li>
+            <?php if (isLoggedIn()) : ?>
+            <li id="create"><a href="createpage.php"> Create page</a></li>
+			<li id="edit"><a href="editpage.php"> Edit/Remove page </a></li>
+			<li id="profile"><a href="profilepage.php"> Profile page </a></li>
 				<li id="logout"><a href="logout.php"> Logout (<?php echo html_entity_decode(getUserName()); ?>)</a></li>
 			<?php else: ?>
 				<li id="logout"><a href="login.php"> Login </a></li>
