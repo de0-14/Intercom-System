@@ -91,4 +91,30 @@ function getUserName() {
         return 'WALA NI GANA';
     }
 }
+function getDepartments($conn, $activeOnly = true) {
+    $sql = "SELECT * FROM departments";
+    if($activeOnly) {
+        $sql .= " WHERE status = 'active'";
+    }
+    $sql .= " ORDER BY department_name";
+    $result = $conn->query($sql);
+    $departments = [];
+    while($row = $result->fetch_assoc()) {
+        $departments[] = $row;
+    }
+    return $departments;
+}
+function getUnits($conn, $activeOnly = true) {
+    $sql = "SELECT * FROM units";
+    if($activeOnly) {
+        $sql .= " WHERE status = 'active'";
+    }
+    $sql .= " ORDER BY unit_name";
+    $result = $conn->query($sql);
+    $departments = [];
+    while($row = $result->fetch_assoc()) {
+        $departments[] = $row;
+    }
+    return $departments;
+}
 ?>
