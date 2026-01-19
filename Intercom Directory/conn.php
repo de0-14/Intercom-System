@@ -5,7 +5,7 @@ $user = "root";
 $password = "";
 $database = "drmc_intercom";
 
-$conn = mysqli_connect($host,$user,$password,$database);
+$conn = mysqli_connect($host, $user, $password, $database, 3307);
 if(!$conn) {
     die("Connection Failed: ".mysqli_connect_error());
 }
@@ -82,6 +82,7 @@ function getOfficesByUnit($conn, $unit_id, $activeOnly = true) {
 
 function isLoggedIn() {
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+    
 }
 
 function getUserName() {
@@ -91,4 +92,31 @@ function getUserName() {
         return 'WALA NI GANA';
     }
 }
+function getDepartments($conn, $activeOnly = true) {
+    $sql = "SELECT * FROM departments";
+    if($activeOnly) {
+        $sql .= " WHERE status = 'active'";
+    }
+    $sql .= " ORDER BY department_name";
+    $result = $conn->query($sql);
+    $departments = [];
+    while($row = $result->fetch_assoc()) {
+        $departments[] = $row;
+    }
+    return $departments;
+}
+function getUnits($conn, $activeOnly = true) {
+    $sql = "SELECT * FROM units";
+    if($activeOnly) {
+        $sql .= " WHERE status = 'active'";
+    }
+    $sql .= " ORDER BY unit_name";
+    $result = $conn->query($sql);
+    $departments = [];
+    while($row = $result->fetch_assoc()) {
+        $departments[] = $row;
+    }
+    return $departments;
+}
 ?>
+
