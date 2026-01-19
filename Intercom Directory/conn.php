@@ -5,7 +5,7 @@ $user = "root";
 $password = "";
 $database = "drmc_intercom";
 
-$conn = mysqli_connect($host, $user, $password, $database, 3307);
+$conn = mysqli_connect($host, $user, $password, $database);
 if(!$conn) {
     die("Connection Failed: ".mysqli_connect_error());
 }

@@ -240,12 +240,21 @@ if (isset($_POST['add_new_number'])) {
 if (isset($_POST['update_division'])) {
     $division_id = (int)$_POST['division_id'];
     $division_name = trim($_POST['division_name']);
+    $division_head = trim($_POST['division_head']);
     $division_status = $_POST['division_status'];
     
     $update_stmt = $conn->prepare("UPDATE divisions SET division_name = ?, status = ? WHERE division_id = ?");
     $update_stmt->bind_param("ssi", $division_name, $division_status, $division_id);
     
     if ($update_stmt->execute()) {
+        // Also update the head in the associated numbers
+        if (!empty($division_head)) {
+            $update_head_stmt = $conn->prepare("UPDATE numbers SET head = ? WHERE division_id = ?");
+            $update_head_stmt->bind_param("si", $division_head, $division_id);
+            $update_head_stmt->execute();
+            $update_head_stmt->close();
+        }
+        
         $success = "Division updated successfully!";
         $edit_org_mode = '';
         header("Location: editpage.php?section=divisions&success=" . urlencode($success));
@@ -260,6 +269,7 @@ if (isset($_POST['update_division'])) {
 if (isset($_POST['update_department'])) {
     $department_id = (int)$_POST['department_id'];
     $department_name = trim($_POST['department_name']);
+    $department_head = trim($_POST['department_head']);
     $division_id = (int)$_POST['division_id'];
     $department_status = $_POST['department_status'];
     
@@ -267,6 +277,12 @@ if (isset($_POST['update_department'])) {
     $update_stmt->bind_param("sisi", $department_name, $division_id, $department_status, $department_id);
     
     if ($update_stmt->execute()) {
+        if (!empty($department_head)) {
+            $update_head_stmt = $conn->prepare("UPDATE numbers SET head = ? WHERE department_id = ?");
+            $update_head_stmt->bind_param("si", $department_head, $department_id);
+            $update_head_stmt->execute();
+            $update_head_stmt->close();
+        }
         $success = "Department updated successfully!";
         $edit_org_mode = '';
         header("Location: editpage.php?section=departments&success=" . urlencode($success));
@@ -281,6 +297,7 @@ if (isset($_POST['update_department'])) {
 if (isset($_POST['update_unit'])) {
     $unit_id = (int)$_POST['unit_id'];
     $unit_name = trim($_POST['unit_name']);
+    $unit_head = trim($_POST['unit_head']);
     $department_id = (int)$_POST['department_id'];
     $unit_status = $_POST['unit_status'];
     
@@ -288,6 +305,12 @@ if (isset($_POST['update_unit'])) {
     $update_stmt->bind_param("sisi", $unit_name, $department_id, $unit_status, $unit_id);
     
     if ($update_stmt->execute()) {
+        if (!empty($unit_head)) {
+            $update_head_stmt = $conn->prepare("UPDATE numbers SET head = ? WHERE unit_id = ?");
+            $update_head_stmt->bind_param("si", $unit_head, $unit_id);
+            $update_head_stmt->execute();
+            $update_head_stmt->close();
+        }
         $success = "Unit updated successfully!";
         $edit_org_mode = '';
         header("Location: editpage.php?section=units&success=" . urlencode($success));
@@ -302,6 +325,7 @@ if (isset($_POST['update_unit'])) {
 if (isset($_POST['update_office'])) {
     $office_id = (int)$_POST['office_id'];
     $office_name = trim($_POST['office_name']);
+    $office_head = trim($_POST['office_head']);
     $unit_id = (int)$_POST['unit_id'];
     $office_status = $_POST['office_status'];
     
@@ -309,6 +333,12 @@ if (isset($_POST['update_office'])) {
     $update_stmt->bind_param("sisi", $office_name, $unit_id, $office_status, $office_id);
     
     if ($update_stmt->execute()) {
+        if (!empty($office_head)) {
+            $update_head_stmt = $conn->prepare("UPDATE numbers SET head = ? WHERE office_id = ?");
+            $update_head_stmt->bind_param("si", $office_head, $office_id);
+            $update_head_stmt->execute();
+            $update_head_stmt->close();
+        }
         $success = "Office updated successfully!";
         $edit_org_mode = '';
         header("Location: editpage.php?section=offices&success=" . urlencode($success));
@@ -457,24 +487,31 @@ if ($result) {
 }
 
 // Fetch all organizational units for dropdowns
-$divisions_result = $conn->query("SELECT * FROM divisions ORDER BY division_name");
+// Fix the SQL queries to use GROUP BY
+$divisions_result = $conn->query("SELECT dv.*, n.head FROM divisions dv LEFT JOIN numbers n ON dv.division_id = n.division_id GROUP BY dv.division_id ORDER BY division_name");
 $divisions_list = $divisions_result->fetch_all(MYSQLI_ASSOC);
 
 $departments_result = $conn->query("SELECT 
     d.*,
-    dv.division_name 
+    dv.division_name,
+    n.head
     FROM departments d
     LEFT JOIN divisions dv ON d.division_id = dv.division_id
+    LEFT JOIN numbers n ON d.department_id = n.department_id
+    GROUP BY d.department_id
     ORDER BY d.department_name");
 $departments_list = $departments_result->fetch_all(MYSQLI_ASSOC);
 
 $units_result = $conn->query("SELECT 
     u.*,
     d.department_name,
-    dv.division_name 
+    dv.division_name,
+    n.head
     FROM units u
     LEFT JOIN departments d ON u.department_id = d.department_id
     LEFT JOIN divisions dv ON d.division_id = dv.division_id
+    LEFT JOIN numbers n ON u.unit_id = n.unit_id
+    GROUP BY u.unit_id
     ORDER BY u.unit_name");
 $units_list = $units_result->fetch_all(MYSQLI_ASSOC);
 
@@ -482,11 +519,14 @@ $offices_result = $conn->query("SELECT
     o.*,
     u.unit_name,
     d.department_name,
-    dv.division_name 
+    dv.division_name,
+    n.head
     FROM offices o
     LEFT JOIN units u ON o.unit_id = u.unit_id
     LEFT JOIN departments d ON u.department_id = d.department_id
     LEFT JOIN divisions dv ON d.division_id = dv.division_id
+    LEFT JOIN numbers n ON o.office_id = n.office_id
+    GROUP BY o.office_id
     ORDER BY o.office_name");
 $offices_list = $offices_result->fetch_all(MYSQLI_ASSOC);
 
@@ -943,6 +983,107 @@ if (isset($_GET['success'])) {
             gap: 10px;
             align-items: center;
         }
+        /* --- HEAD & ORGANIZATION COLUMN --- */
+        .head-org-column {
+            vertical-align: top;
+        }
+
+        .head-org-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .head-info, .org-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-label {
+            font-size: 11px;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .info-label::before {
+            content: "•";
+            color: #2b6cb0;
+            font-size: 16px;
+        }
+
+        .head-value {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 14px;
+            padding-left: 16px;
+        }
+
+        .org-content {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-left: 16px;
+        }
+
+        .org-type-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            background-color: #ebf8ff;
+            color: #2c5282;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: 1px solid #bee3f8;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .org-name {
+            font-weight: 500;
+            color: #4a5568;
+            font-size: 14px;
+        }
+
+        .org-not-assigned {
+            color: #a0aec0;
+            font-style: italic;
+            font-size: 13px;
+            padding-left: 16px;
+        }
+
+        /* --- TABLE COLUMN WIDTHS --- */
+        .contacts-table th:nth-child(1), 
+        .contacts-table td:nth-child(1) {
+            width: 15%;
+        }
+
+        .contacts-table th:nth-child(2), 
+        .contacts-table td:nth-child(2) {
+            width: 10%;
+        }
+
+        .contacts-table th:nth-child(3), 
+        .contacts-table td:nth-child(3) {
+            width: 10%;
+        }
+
+        .contacts-table th:nth-child(4), 
+        .contacts-table td:nth-child(4) {
+            width: 35%;
+        }
+
+        .contacts-table th:nth-child(5), 
+        .contacts-table td:nth-child(5) {
+            width: 20%;
+        }
     </style>
 </head>
 <body>
@@ -1201,11 +1342,18 @@ if (isset($_GET['success'])) {
                 <h3>Edit Division: <?php echo htmlspecialchars($current_org_item['division_name']); ?></h3>
                 <form method="POST">
                     <input type="hidden" name="division_id" value="<?php echo $current_org_item['division_id']; ?>">
-                    
+
                     <div class="form-group">
                         <label for="division_name">Division Name *</label>
                         <input type="text" id="division_name" name="division_name" 
                                value="<?php echo htmlspecialchars($current_org_item['division_name']); ?>" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="division_head">Division Head</label>
+                        <input type="text" id="division_head" name="division_head" 
+                            value="<?php echo htmlspecialchars($current_org_item['head'] ?? ''); ?>" 
+                            placeholder="Enter division head name">
                     </div>
                     
                     <div class="form-group">
@@ -1234,6 +1382,13 @@ if (isset($_GET['success'])) {
                         <label for="department_name">Department Name *</label>
                         <input type="text" id="department_name" name="department_name" 
                                value="<?php echo htmlspecialchars($current_org_item['department_name']); ?>" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="department_head">Department Head</label>
+                        <input type="text" id="department_head" name="department_head" 
+                            value="<?php echo htmlspecialchars($current_org_item['head'] ?? ''); ?>" 
+                            placeholder="Enter department head name">
                     </div>
                     
                     <div class="form-group">
@@ -1278,6 +1433,13 @@ if (isset($_GET['success'])) {
                     </div>
                     
                     <div class="form-group">
+                        <label for="unit_head">Unit Head</label>
+                        <input type="text" id="unit_head" name="unit_head" 
+                            value="<?php echo htmlspecialchars($current_org_item['head'] ?? ''); ?>" 
+                            placeholder="Enter Unit head name">
+                    </div>
+
+                    <div class="form-group">
                         <label for="department_id">Department *</label>
                         <select id="department_id" name="department_id" required>
                             <option value="">Select Department</option>
@@ -1316,6 +1478,13 @@ if (isset($_GET['success'])) {
                         <label for="office_name">Office Name *</label>
                         <input type="text" id="office_name" name="office_name" 
                                value="<?php echo htmlspecialchars($current_org_item['office_name']); ?>" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="office_head">Office Head</label>
+                        <input type="text" id="office_head" name="office_head" 
+                            value="<?php echo htmlspecialchars($current_org_item['head'] ?? ''); ?>" 
+                            placeholder="Enter Office head name">
                     </div>
                     
                     <div class="form-group">
@@ -1365,9 +1534,8 @@ if (isset($_GET['success'])) {
                             <tr>
                                 <th>Contact Number</th>
                                 <th>Description</th>
-                                <th>Head</th>
                                 <th>Status</th>
-                                <th>Organization</th>
+                                <th>Head & Organization</th> <!-- Changed from separate columns -->
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -1405,21 +1573,33 @@ if (isset($_GET['success'])) {
                             ?>
                                 <tr>
                                     <td><?php echo htmlspecialchars($number['numbers']); ?></td>
-                                    <td><?php echo htmlspecialchars($number['description']); ?></td>
-                                    <td><?php echo htmlspecialchars($number['head']); ?></td>
-                                    <td>
-                                        <span class="status-badge <?php echo $statusClass; ?>">
-                                            <?php echo $statusText; ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <?php if ($org_type && $org_name): ?>
-                                            <span class="org-badge"><?php echo $org_type; ?></span>
-                                            <?php echo htmlspecialchars($org_name); ?>
-                                        <?php else: ?>
-                                            <em style="color: #999;">Not assigned</em>
-                                        <?php endif; ?>
-                                    </td>
+                                        <td><?php echo htmlspecialchars($number['description']); ?></td>
+                                        <td>
+                                            <span class="status-badge <?php echo $statusClass; ?>">
+                                                <?php echo $statusText; ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <!-- Combined Head and Organization -->
+                                            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start;">
+                                                <!-- Head -->
+                                                <div style="font-weight: 600; color: #2d3748;">
+                                                    <?php echo htmlspecialchars($number['head']); ?>
+                                                </div>
+                                                
+                                                <!-- Organization -->
+                                                <div style="font-weight: 600; color: #2d3748;">
+                                                    <?php if ($org_type && $org_name): ?>
+                                                        <div style="display: flex; align-items: center; gap: 6px;">
+                                                            <span class="org-badge"><?php echo $org_type; ?></span>
+                                                            <?php echo htmlspecialchars($org_name); ?>
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <em style="color: #999; font-size: 14px;">Not assigned</em>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+                                        </td>
                                     <td>
                                         <div class="action-buttons">
                                             <a href="?section=contacts&edit=<?php echo $number['number_id']; ?>" class="edit-btn">Edit</a>
@@ -1461,6 +1641,7 @@ if (isset($_GET['success'])) {
                         <thead>
                             <tr>
                                 <th>Division Name</th>
+                                <th>Division Head</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
@@ -1469,6 +1650,7 @@ if (isset($_GET['success'])) {
                             <?php foreach ($divisions_list as $division): ?>
                                 <tr>
                                     <td><?php echo htmlspecialchars($division['division_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($division['head']); ?></td>
                                     <td>
                                         <span class="status-badge <?php echo $division['status'] == 'active' ? 'status-active' : 'status-decommissioned'; ?>">
                                             <?php echo ucfirst($division['status']); ?>
@@ -1514,6 +1696,7 @@ if (isset($_GET['success'])) {
                         <thead>
                             <tr>
                                 <th>Department Name</th>
+                                <th>Department Head</th>
                                 <th>Division</th>
                                 <th>Status</th>
                                 <th>Actions</th>
@@ -1523,6 +1706,7 @@ if (isset($_GET['success'])) {
                             <?php foreach ($departments_list as $department): ?>
                                 <tr>
                                     <td><?php echo htmlspecialchars($department['department_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($department['head']); ?></td>
                                     <td>
                                         <?php echo htmlspecialchars($department['division_name']); ?>
                                     </td>
@@ -1571,6 +1755,7 @@ if (isset($_GET['success'])) {
                         <thead>
                             <tr>
                                 <th>Unit Name</th>
+                                <th>Unit Head</th>
                                 <th>Department</th>
                                 <th>Division</th>
                                 <th>Status</th>
@@ -1581,6 +1766,7 @@ if (isset($_GET['success'])) {
                             <?php foreach ($units_list as $unit): ?>
                                 <tr>
                                     <td><?php echo htmlspecialchars($unit['unit_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($unit['head']); ?></td>
                                     <td><?php echo htmlspecialchars($unit['department_name']); ?></td>
                                     <td>
                                         <div class="parent-info"><?php echo htmlspecialchars($unit['division_name']); ?></div>
@@ -1630,6 +1816,7 @@ if (isset($_GET['success'])) {
                         <thead>
                             <tr>
                                 <th>Office Name</th>
+                                <th>Office Head</th>
                                 <th>Unit</th>
                                 <th>Department</th>
                                 <th>Division</th>
@@ -1641,6 +1828,7 @@ if (isset($_GET['success'])) {
                             <?php foreach ($offices_list as $office): ?>
                                 <tr>
                                     <td><?php echo htmlspecialchars($office['office_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($office['head']); ?></td>
                                     <td><?php echo htmlspecialchars($office['unit_name']); ?></td>
                                     <td><?php echo htmlspecialchars($office['department_name']); ?></td>
                                     <td>
