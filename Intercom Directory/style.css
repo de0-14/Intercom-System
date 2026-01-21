@@ -8,8 +8,7 @@
 body {
     min-height: 100vh;
     display: flex;
-    flex-direction: column;
-    /* Hospital background */
+    flex-direction: column; 
     background: url('drmc.jpg') no-repeat center center fixed;
     background-size: cover;
     position: relative;
@@ -29,16 +28,23 @@ body::before {
 
 /* HEADER */
 .header {
-    height: 90px;
+            background-color: #07417f;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            position: relative;
+            z-index: 1000;
+        }
+.header > div:last-child {
+    width: 90%;
+    margin-top: auto;
+    padding-bottom: 15px;
     display: flex;
-    align-items: center;
-    padding: 0 32px;
-    background-color: rgba(255, 255, 255, 0.9);
-    border-bottom: 1px solid #dde8f6;
-    position: relative;
-    z-index: 1;
+    justify-content: center;
 }
-
 .logo {
     display: flex;
     align-items: center;
@@ -46,6 +52,7 @@ body::before {
     color: #2b6cb0;
     font-weight: 600;
     font-size: 35px;
+    margin-bottom: 15px;
 }
 
 .logo img {
@@ -63,12 +70,12 @@ body::before {
     position: relative;
     z-index: 1;
 }
-
 ul.nav {
     background-color: #6C7A89;
     padding: 0;
     margin: 0;
     display: flex;
+    border-radius: 10px;
     list-style-type: none;
     justify-content: center;
     flex-shrink: 0;
@@ -94,7 +101,8 @@ ul.choice {
     display: flex;
     list-style-type: none;
     justify-content: center;
-    max-width: 25rem;
+    width: auto;
+    max-width: 35%;
     border-radius: 0.563rem;
     transform: scale(1.2);
 }
@@ -112,7 +120,15 @@ ul.choice li a:hover {
     transform: translateY(-1px) scale(0.9);
     border-radius: 0.313rem;
 }
-
+.big-container {
+    max-width: 1400px;
+    margin: 30px auto;
+    padding: 20px;
+    background: rgba(29, 43, 83, 0.7);
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    border: 1px solid #6C7A89;
+}
 .card {
     width: 100%;
     max-width: 450px;
@@ -134,7 +150,7 @@ ul.choice li a:hover {
 h2 {
     text-align: center;
     margin-bottom: 8px;
-    color: #2b6cb0;
+    color: #042b55;
     font-size: 22px;
 }
 
@@ -167,7 +183,83 @@ select:focus {
     outline: none;
     border-color: #2b6cb0;
 }
+/* Add these styles to your existing style.css */
 
+.content {
+    text-align: center;
+    margin: 20px 0;
+    position: relative;
+    z-index: 1;
+}
+
+.big-container {
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+    background-color: rgba(255, 255, 255, 0.85);
+    border-radius: 12px;
+    padding: 30px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    position: relative;
+    z-index: 1;
+}
+
+.big-container h2 {
+    text-align: center;
+    margin-bottom: 25px;
+    color: #2b6cb0;
+    font-size: 24px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #333;
+    font-weight: 500;
+    text-align: left;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 12px 15px;
+    border-radius: 6px;
+    border: 1px solid #ccd6e3;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #2b6cb0;
+    box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.1);
+}
+
+button.submit-btn {
+    width: 100%;
+    padding: 14px;
+    background-color: #2b6cb0;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-top: 10px;
+}
+
+button.submit-btn:hover {
+    background-color: #1f4f8b;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
 .submit-btn {
     width: 100%;
     padding: 12px;
