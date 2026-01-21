@@ -1,5 +1,6 @@
 <?php
 require_once 'conn.php';
+updateAllUsersActivity($conn);
 
 if (!isLoggedIn()) {
     header('Location: login.php');
@@ -243,26 +244,113 @@ if (isset($_POST['update_division'])) {
     $division_head = trim($_POST['division_head']);
     $division_status = $_POST['division_status'];
     
-    $update_stmt = $conn->prepare("UPDATE divisions SET division_name = ?, status = ? WHERE division_id = ?");
-    $update_stmt->bind_param("ssi", $division_name, $division_status, $division_id);
-    
-    if ($update_stmt->execute()) {
+    try {
+        $conn->begin_transaction();
+        
+        // Update the division
+        $update_stmt = $conn->prepare("UPDATE divisions SET division_name = ?, status = ? WHERE division_id = ?");
+        $update_stmt->bind_param("ssi", $division_name, $division_status, $division_id);
+        
+        if (!$update_stmt->execute()) {
+            throw new Exception("Failed to update division: " . $update_stmt->error);
+        }
+        $update_stmt->close();
+        
         // Also update the head in the associated numbers
         if (!empty($division_head)) {
             $update_head_stmt = $conn->prepare("UPDATE numbers SET head = ? WHERE division_id = ?");
             $update_head_stmt->bind_param("si", $division_head, $division_id);
-            $update_head_stmt->execute();
+            if (!$update_head_stmt->execute()) {
+                throw new Exception("Failed to update division head: " . $update_head_stmt->error);
+            }
             $update_head_stmt->close();
         }
         
-        $success = "Division updated successfully!";
+        // If decommissioning, cascade to all child organizations and their numbers
+        if ($division_status === 'decommissioned') {
+            // Update all numbers under this division
+            $update_numbers = $conn->prepare("UPDATE numbers SET status = 'decommissioned' WHERE division_id = ?");
+            $update_numbers->bind_param("i", $division_id);
+            if (!$update_numbers->execute()) {
+                throw new Exception("Failed to update numbers: " . $update_numbers->error);
+            }
+            $update_numbers->close();
+            
+            // Update all departments under this division
+            $update_depts = $conn->prepare("UPDATE departments SET status = 'decommissioned' WHERE division_id = ?");
+            $update_depts->bind_param("i", $division_id);
+            if (!$update_depts->execute()) {
+                throw new Exception("Failed to update departments: " . $update_depts->error);
+            }
+            $update_depts->close();
+            
+            // Get all departments under this division to cascade to units
+            $dept_ids_stmt = $conn->prepare("SELECT department_id FROM departments WHERE division_id = ?");
+            $dept_ids_stmt->bind_param("i", $division_id);
+            $dept_ids_stmt->execute();
+            $dept_ids_result = $dept_ids_stmt->get_result();
+            $dept_ids_stmt->close();
+            
+            $dept_ids = [];
+            while ($dept = $dept_ids_result->fetch_assoc()) {
+                $dept_ids[] = $dept['department_id'];
+            }
+            
+            if (!empty($dept_ids)) {
+                // Update all units under these departments
+                $placeholders = implode(',', array_fill(0, count($dept_ids), '?'));
+                $update_units = $conn->prepare("UPDATE units SET status = 'decommissioned' WHERE department_id IN ($placeholders)");
+                $types = str_repeat('i', count($dept_ids));
+                $update_units->bind_param($types, ...$dept_ids);
+                if (!$update_units->execute()) {
+                    throw new Exception("Failed to update units: " . $update_units->error);
+                }
+                $update_units->close();
+                
+                // Get all units under these departments to cascade to offices
+                $unit_ids_stmt = $conn->prepare("SELECT unit_id FROM units WHERE department_id IN ($placeholders)");
+                $unit_ids_stmt->bind_param($types, ...$dept_ids);
+                $unit_ids_stmt->execute();
+                $unit_ids_result = $unit_ids_stmt->get_result();
+                $unit_ids_stmt->close();
+                
+                $unit_ids = [];
+                while ($unit = $unit_ids_result->fetch_assoc()) {
+                    $unit_ids[] = $unit['unit_id'];
+                }
+                
+                if (!empty($unit_ids)) {
+                    // Update all offices under these units
+                    $office_placeholders = implode(',', array_fill(0, count($unit_ids), '?'));
+                    $update_offices = $conn->prepare("UPDATE offices SET status = 'decommissioned' WHERE unit_id IN ($office_placeholders)");
+                    $office_types = str_repeat('i', count($unit_ids));
+                    $update_offices->bind_param($office_types, ...$unit_ids);
+                    if (!$update_offices->execute()) {
+                        throw new Exception("Failed to update offices: " . $update_offices->error);
+                    }
+                    $update_offices->close();
+                    
+                    // Update all numbers under these offices
+                    $update_office_numbers = $conn->prepare("UPDATE numbers SET status = 'decommissioned' WHERE office_id IN ($office_placeholders)");
+                    $update_office_numbers->bind_param($office_types, ...$unit_ids);
+                    if (!$update_office_numbers->execute()) {
+                        throw new Exception("Failed to update office numbers: " . $update_office_numbers->error);
+                    }
+                    $update_office_numbers->close();
+                }
+            }
+        }
+        
+        $conn->commit();
+        $success = "Division updated successfully!" . ($division_status === 'decommissioned' ? " All child organizations and their numbers have been decommissioned." : "");
         $edit_org_mode = '';
         header("Location: editpage.php?section=divisions&success=" . urlencode($success));
         exit;
-    } else {
-        $error = "Failed to update division: " . $update_stmt->error;
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        $error = $e->getMessage();
     }
-    $update_stmt->close();
 }
 
 // Handle update department
@@ -273,24 +361,87 @@ if (isset($_POST['update_department'])) {
     $division_id = (int)$_POST['division_id'];
     $department_status = $_POST['department_status'];
     
-    $update_stmt = $conn->prepare("UPDATE departments SET department_name = ?, division_id = ?, status = ? WHERE department_id = ?");
-    $update_stmt->bind_param("sisi", $department_name, $division_id, $department_status, $department_id);
-    
-    if ($update_stmt->execute()) {
+    try {
+        $conn->begin_transaction();
+        
+        $update_stmt = $conn->prepare("UPDATE departments SET department_name = ?, division_id = ?, status = ? WHERE department_id = ?");
+        $update_stmt->bind_param("sisi", $department_name, $division_id, $department_status, $department_id);
+        
+        if (!$update_stmt->execute()) {
+            throw new Exception("Failed to update department: " . $update_stmt->error);
+        }
+        $update_stmt->close();
+        
         if (!empty($department_head)) {
             $update_head_stmt = $conn->prepare("UPDATE numbers SET head = ? WHERE department_id = ?");
             $update_head_stmt->bind_param("si", $department_head, $department_id);
-            $update_head_stmt->execute();
+            if (!$update_head_stmt->execute()) {
+                throw new Exception("Failed to update department head: " . $update_head_stmt->error);
+            }
             $update_head_stmt->close();
         }
-        $success = "Department updated successfully!";
+        
+        // If decommissioning, cascade to all child units, offices, and their numbers
+        if ($department_status === 'decommissioned') {
+            // Update all numbers under this department
+            $update_numbers = $conn->prepare("UPDATE numbers SET status = 'decommissioned' WHERE department_id = ?");
+            $update_numbers->bind_param("i", $department_id);
+            if (!$update_numbers->execute()) {
+                throw new Exception("Failed to update numbers: " . $update_numbers->error);
+            }
+            $update_numbers->close();
+            
+            // Update all units under this department
+            $update_units = $conn->prepare("UPDATE units SET status = 'decommissioned' WHERE department_id = ?");
+            $update_units->bind_param("i", $department_id);
+            if (!$update_units->execute()) {
+                throw new Exception("Failed to update units: " . $update_units->error);
+            }
+            $update_units->close();
+            
+            // Get all units under this department to cascade to offices
+            $unit_ids_stmt = $conn->prepare("SELECT unit_id FROM units WHERE department_id = ?");
+            $unit_ids_stmt->bind_param("i", $department_id);
+            $unit_ids_stmt->execute();
+            $unit_ids_result = $unit_ids_stmt->get_result();
+            $unit_ids_stmt->close();
+            
+            $unit_ids = [];
+            while ($unit = $unit_ids_result->fetch_assoc()) {
+                $unit_ids[] = $unit['unit_id'];
+            }
+            
+            if (!empty($unit_ids)) {
+                // Update all offices under these units
+                $placeholders = implode(',', array_fill(0, count($unit_ids), '?'));
+                $update_offices = $conn->prepare("UPDATE offices SET status = 'decommissioned' WHERE unit_id IN ($placeholders)");
+                $types = str_repeat('i', count($unit_ids));
+                $update_offices->bind_param($types, ...$unit_ids);
+                if (!$update_offices->execute()) {
+                    throw new Exception("Failed to update offices: " . $update_offices->error);
+                }
+                $update_offices->close();
+                
+                // Update all numbers under these offices
+                $update_office_numbers = $conn->prepare("UPDATE numbers SET status = 'decommissioned' WHERE office_id IN ($placeholders)");
+                $update_office_numbers->bind_param($types, ...$unit_ids);
+                if (!$update_office_numbers->execute()) {
+                    throw new Exception("Failed to update office numbers: " . $update_office_numbers->error);
+                }
+                $update_office_numbers->close();
+            }
+        }
+        
+        $conn->commit();
+        $success = "Department updated successfully!" . ($department_status === 'decommissioned' ? " All child units, offices, and their numbers have been decommissioned." : "");
         $edit_org_mode = '';
         header("Location: editpage.php?section=departments&success=" . urlencode($success));
         exit;
-    } else {
-        $error = "Failed to update department: " . $update_stmt->error;
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        $error = $e->getMessage();
     }
-    $update_stmt->close();
 }
 
 // Handle update unit
@@ -301,24 +452,63 @@ if (isset($_POST['update_unit'])) {
     $department_id = (int)$_POST['department_id'];
     $unit_status = $_POST['unit_status'];
     
-    $update_stmt = $conn->prepare("UPDATE units SET unit_name = ?, department_id = ?, status = ? WHERE unit_id = ?");
-    $update_stmt->bind_param("sisi", $unit_name, $department_id, $unit_status, $unit_id);
-    
-    if ($update_stmt->execute()) {
+    try {
+        $conn->begin_transaction();
+        
+        $update_stmt = $conn->prepare("UPDATE units SET unit_name = ?, department_id = ?, status = ? WHERE unit_id = ?");
+        $update_stmt->bind_param("sisi", $unit_name, $department_id, $unit_status, $unit_id);
+        
+        if (!$update_stmt->execute()) {
+            throw new Exception("Failed to update unit: " . $update_stmt->error);
+        }
+        $update_stmt->close();
+        
         if (!empty($unit_head)) {
             $update_head_stmt = $conn->prepare("UPDATE numbers SET head = ? WHERE unit_id = ?");
             $update_head_stmt->bind_param("si", $unit_head, $unit_id);
-            $update_head_stmt->execute();
+            if (!$update_head_stmt->execute()) {
+                throw new Exception("Failed to update unit head: " . $update_head_stmt->error);
+            }
             $update_head_stmt->close();
         }
-        $success = "Unit updated successfully!";
+        
+        // If decommissioning, cascade to all child offices and their numbers
+        if ($unit_status === 'decommissioned') {
+            // Update all numbers under this unit
+            $update_numbers = $conn->prepare("UPDATE numbers SET status = 'decommissioned' WHERE unit_id = ?");
+            $update_numbers->bind_param("i", $unit_id);
+            if (!$update_numbers->execute()) {
+                throw new Exception("Failed to update numbers: " . $update_numbers->error);
+            }
+            $update_numbers->close();
+            
+            // Update all offices under this unit
+            $update_offices = $conn->prepare("UPDATE offices SET status = 'decommissioned' WHERE unit_id = ?");
+            $update_offices->bind_param("i", $unit_id);
+            if (!$update_offices->execute()) {
+                throw new Exception("Failed to update offices: " . $update_offices->error);
+            }
+            $update_offices->close();
+            
+            // Update all numbers under offices in this unit
+            $update_office_numbers = $conn->prepare("UPDATE numbers n JOIN offices o ON n.office_id = o.office_id SET n.status = 'decommissioned' WHERE o.unit_id = ?");
+            $update_office_numbers->bind_param("i", $unit_id);
+            if (!$update_office_numbers->execute()) {
+                throw new Exception("Failed to update office numbers: " . $update_office_numbers->error);
+            }
+            $update_office_numbers->close();
+        }
+        
+        $conn->commit();
+        $success = "Unit updated successfully!" . ($unit_status === 'decommissioned' ? " All child offices and their numbers have been decommissioned." : "");
         $edit_org_mode = '';
         header("Location: editpage.php?section=units&success=" . urlencode($success));
         exit;
-    } else {
-        $error = "Failed to update unit: " . $update_stmt->error;
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        $error = $e->getMessage();
     }
-    $update_stmt->close();
 }
 
 // Handle update office
@@ -1364,6 +1554,10 @@ if (isset($_GET['success'])) {
                         </select>
                     </div>
                     
+                    <div id="decommissionWarning" style="display: none; background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; margin-top: 10px; color: #856404;">
+                        <strong>Warning:</strong> Decommissioning this organization will also decommission all child organizations and their contact numbers.
+                    </div>
+                    
                     <div style="display: flex; gap: 10px; margin-top: 20px;">
                         <button type="submit" name="update_division" class="btn-save">Update Division</button>
                         <a href="?section=divisions&cancel=1" class="btn-cancel">Cancel</a>
@@ -1410,6 +1604,10 @@ if (isset($_GET['success'])) {
                             <option value="active" <?php echo $current_org_item['status'] == 'active' ? 'selected' : ''; ?>>Active</option>
                             <option value="decommissioned" <?php echo $current_org_item['status'] == 'decommissioned' ? 'selected' : ''; ?>>Decommissioned</option>
                         </select>
+                    </div>
+
+                    <div id="decommissionWarning" style="display: none; background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; margin-top: 10px; color: #856404;">
+                        <strong>Warning:</strong> Decommissioning this organization will also decommission all child organizations and their contact numbers.
                     </div>
                     
                     <div style="display: flex; gap: 10px; margin-top: 20px;">
@@ -1459,6 +1657,10 @@ if (isset($_GET['success'])) {
                             <option value="decommissioned" <?php echo $current_org_item['status'] == 'decommissioned' ? 'selected' : ''; ?>>Decommissioned</option>
                         </select>
                     </div>
+
+                    <div id="decommissionWarning" style="display: none; background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; margin-top: 10px; color: #856404;">
+                        <strong>Warning:</strong> Decommissioning this organization will also decommission all child organizations and their contact numbers.
+                    </div>
                     
                     <div style="display: flex; gap: 10px; margin-top: 20px;">
                         <button type="submit" name="update_unit" class="btn-save">Update Unit</button>
@@ -1506,6 +1708,10 @@ if (isset($_GET['success'])) {
                             <option value="active" <?php echo $current_org_item['status'] == 'active' ? 'selected' : ''; ?>>Active</option>
                             <option value="decommissioned" <?php echo $current_org_item['status'] == 'decommissioned' ? 'selected' : ''; ?>>Decommissioned</option>
                         </select>
+                    </div>
+
+                    <div id="decommissionWarning" style="display: none; background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; margin-top: 10px; color: #856404;">
+                        <strong>Warning:</strong> Decommissioning this organization will also decommission all child organizations and their contact numbers.
                     </div>
                     
                     <div style="display: flex; gap: 10px; margin-top: 20px;">
@@ -1665,7 +1871,7 @@ if (isset($_GET['success'])) {
                                             <form method="POST" style="display: inline;">
                                                 <input type="hidden" name="delete_division" value="<?php echo $division['division_id']; ?>">
                                                 <button type="submit" class="delete-btn" 
-                                                        onclick="return confirm('Are you sure you want to delete <?php echo htmlspecialchars($division['division_name']); ?>? This will also delete all associated contact numbers.')">
+                                                        onclick="return confirm('Are you sure you want to delete <?php echo htmlspecialchars($division['division_name']); ?>? This will also delete all associated contact numbers AND all DEPARTMENTS, UNITS, AND OFFICES.')">
                                                     Delete
                                                 </button>
                                             </form>
@@ -1933,6 +2139,25 @@ if (isset($_GET['success'])) {
             if (officeSelect) officeSelect.addEventListener('change', function() { if (this.value) clearOtherSelections(this); });
         }
     });
+
+    function showDecommissionWarning(select, orgType) {
+        const warningDiv = document.getElementById('decommissionWarning');
+        if (select.value === 'decommissioned') {
+            warningDiv.style.display = 'block';
+            // Customize message based on org type
+            if (orgType === 'division') {
+                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this division will also decommission all departments, units, offices, and their contact numbers under it.';
+            } else if (orgType === 'department') {
+                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this department will also decommission all units, offices, and their contact numbers under it.';
+            } else if (orgType === 'unit') {
+                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this unit will also decommission all offices and their contact numbers under it.';
+            } else if (orgType === 'office') {
+                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this office will also decommission all contact numbers under it.';
+            }
+        } else {
+            warningDiv.style.display = 'none';
+        }
+    }
 </script>
 </body>
 </html>

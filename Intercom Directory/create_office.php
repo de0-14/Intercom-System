@@ -1,7 +1,7 @@
 <?php
 require_once 'conn.php';
 require_once 'config.php';
-
+updateAllUsersActivity($conn);
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $response = ['success' => false, 'message' => ''];

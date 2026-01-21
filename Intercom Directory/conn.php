@@ -9,7 +9,7 @@ $conn = mysqli_connect($host, $user, $password, $database);
 if(!$conn) {
     die("Connection Failed: ".mysqli_connect_error());
 }
-
+    
 $role_names = [
     1=>"Admin",
     2=>"MCC",
@@ -82,7 +82,10 @@ function getOfficesByUnit($conn, $unit_id, $activeOnly = true) {
 
 function isLoggedIn() {
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
-    
+}
+
+function isAdmin() {
+    return isset($_SESSION['role_id']) && intval($_SESSION['role_id']) == 1;
 }
 
 function getUserName() {
@@ -92,6 +95,7 @@ function getUserName() {
         return 'WALA NI GANA';
     }
 }
+
 function getDepartments($conn, $activeOnly = true) {
     $sql = "SELECT * FROM departments";
     if($activeOnly) {
@@ -105,6 +109,7 @@ function getDepartments($conn, $activeOnly = true) {
     }
     return $departments;
 }
+
 function getUnits($conn, $activeOnly = true) {
     $sql = "SELECT * FROM units";
     if($activeOnly) {
@@ -112,11 +117,42 @@ function getUnits($conn, $activeOnly = true) {
     }
     $sql .= " ORDER BY unit_name";
     $result = $conn->query($sql);
-    $departments = [];
+    $units = [];
     while($row = $result->fetch_assoc()) {
-        $departments[] = $row;
+        $units[] = $row;
     }
-    return $departments;
+    return $units;
+}
+// Update user's last activity timestamp
+function updateUserActivity($conn, $userId) {
+    $currentTime = time();
+    $sql = "UPDATE users SET last_activity = ? WHERE user_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ii", $currentTime, $userId);
+    $stmt->execute();
+}
+
+// Count online admins (users with role_id = 1 active in last 5 minutes)
+function getOnlineAdmins($conn) {
+    $timeout = 300; // 5 minutes in seconds
+    $onlineTime = time() - $timeout;
+    
+    $sql = "SELECT COUNT(*) as online_count FROM users 
+            WHERE role_id = 1 
+            AND last_activity > ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $onlineTime);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    
+    return $row['online_count'] ?? 0;
+}
+
+// Update total users activity
+function updateAllUsersActivity($conn) {
+    if (isset($_SESSION['user_id'])) {
+        updateUserActivity($conn, $_SESSION['user_id']);
+    }
 }
 ?>
-

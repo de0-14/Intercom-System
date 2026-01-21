@@ -1,6 +1,6 @@
 <?php
 require_once 'conn.php';
-
+updateAllUsersActivity($conn);
 // Get all contacts
 function getAllContactNumbers($conn) {
     $sql = "
@@ -69,7 +69,7 @@ function getAllContactNumbers($conn) {
     }
     return $numbers;
 }
-
+$onlineAdminCount = getOnlineAdmins($conn);
 $allNumbers = getAllContactNumbers($conn);
 ?>
 <!DOCTYPE html>
@@ -340,6 +340,179 @@ ul.nav li a:hover {
     .stats-summary { flex-direction: column; gap:15px; }
     .filter-buttons { flex-direction: column; }
 }
+.clickable-row {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.clickable-row:hover {
+    background-color: #f0f8ff;
+}
+/* --- HEADER SECTION WITH ADMIN BUTTON --- */
+.header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.header-section h2 {
+    margin: 0;
+    flex: 1;
+}
+
+/* Admin Online Button */
+.admin-online-container {
+    position: relative;
+}
+
+.admin-online-btn {
+    background: linear-gradient(135deg, #2b6cb0, #1f4f8b);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s;
+    box-shadow: 0 3px 10px rgba(43, 108, 176, 0.3);
+    min-width: 150px;
+}
+
+.admin-online-btn:hover {
+    background: linear-gradient(135deg, #1f4f8b, #153a6e);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(43, 108, 176, 0.4);
+}
+
+.admin-count {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 16px;
+    min-width: 30px;
+    text-align: center;
+}
+
+.admin-label {
+    flex: 1;
+    text-align: center;
+}
+
+.dropdown-arrow {
+    font-size: 10px;
+    transition: transform 0.3s;
+}
+
+/* Admin Dropdown */
+.admin-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 300px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+    margin-top: 10px;
+    padding: 15px;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s;
+}
+
+.admin-online-container:hover .admin-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.admin-dropdown h4 {
+    color: #2b6cb0;
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 16px;
+}
+
+.admin-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.admin-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f7fafc;
+}
+
+.admin-item:last-child {
+    border-bottom: none;
+}
+
+.admin-name {
+    color: #2d3748;
+    font-weight: 500;
+}
+
+.admin-status {
+    color: #718096;
+    font-size: 12px;
+    background: #f7fafc;
+    padding: 3px 8px;
+    border-radius: 4px;
+}
+
+.no-admins {
+    text-align: center;
+    color: #a0aec0;
+    font-style: italic;
+    padding: 20px;
+}
+
+.admin-footer {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.current-user {
+    color: #2b6cb0;
+    font-weight: 600;
+    font-size: 13px;
+    text-align: center;
+}
+
+/* --- RESPONSIVE --- */
+@media (max-width: 768px) {
+    .header-section {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .admin-online-container {
+        align-self: flex-end;
+    }
+    
+    .admin-dropdown {
+        width: 280px;
+        right: -50px;
+    }
+    
+    .admin-dropdown:before {
+        right: 60px;
+    }
+}
 </style>
 </head>
 <body>
@@ -352,8 +525,10 @@ ul.nav li a:hover {
     <ul class="nav">
         <li><a href="homepage.php">Homepage</a></li>
         <?php if (isLoggedIn()): ?>
-            <li><a href="createpage.php">Create page</a></li>
-            <li><a href="editpage.php">Edit page</a></li>
+            <?php if (isAdmin()): ?>
+                <li><a href="createpage.php">Create page</a></li>
+                <li><a href="editpage.php">Edit page</a></li>
+            <?php endif; ?>
             <li><a href="logout.php">Logout (<?php echo getUserName(); ?>)</a></li>
         <?php else: ?>
             <li><a href="login.php">Login</a></li>
@@ -364,7 +539,63 @@ ul.nav li a:hover {
 <div class="content">
     <div class="contact-directory">
         <h2>Hospital Contact Directory</h2>
-        
+            <div class="admin-online-container">
+                <button class="admin-online-btn" id="adminOnlineBtn">
+                    <span class="admin-count"><?php echo $onlineAdminCount; ?></span>
+                    <span class="admin-label">Admins Online</span>
+                    <span class="dropdown-arrow">▼</span>
+                </button>
+                <div class="admin-dropdown" id="adminDropdown">
+                    <h4>Currently Online (<?php echo $onlineAdminCount; ?>)</h4>
+                    <div class="admin-list">
+                        <?php
+                        // Get online admins details
+                        $timeout = 300; // 5 minutes
+                        $onlineTime = time() - $timeout;
+                        
+                        $sql = "SELECT username, role_id, last_activity FROM users 
+                                WHERE role_id = 1 
+                                AND last_activity > ? 
+                                ORDER BY username";
+                        $stmt = $conn->prepare($sql);
+                        $stmt->bind_param("i", $onlineTime);
+                        $stmt->execute();
+                        $result = $stmt->get_result();
+                        
+                        if ($result->num_rows > 0) {
+                            while ($admin = $result->fetch_assoc()) {
+                                $timeAgo = time() - $admin['last_activity'];
+                                $minutesAgo = floor($timeAgo / 60);
+                                
+                                echo '<div class="admin-item">';
+                                echo '<span class="admin-name">' . htmlspecialchars($admin['username']) . '</span>';
+                                echo '<span class="admin-status">';
+                                if ($minutesAgo < 1) {
+                                    echo 'Just now';
+                                } elseif ($minutesAgo == 1) {
+                                    echo '1 min ago';
+                                } else {
+                                    echo $minutesAgo . ' mins ago';
+                                }
+                                echo '</span>';
+                                echo '</div>';
+                            }
+                        } else {
+                            echo '<div class="no-admins">No admins currently online</div>';
+                        }
+                        ?>
+                    </div>
+                    <div class="admin-footer">
+                        <?php 
+                        // Show current user if admin
+                        if (isAdmin()) {
+                            echo '<div class="current-user">You: ' . htmlspecialchars($_SESSION['username'] ?? '') . '</div>';
+                        }
+                        ?>
+                    </div>
+                </div>
+            </div>
+            
         <!-- Stats Summary -->
         <?php 
         $totalContacts = count($allNumbers);
@@ -385,9 +616,6 @@ ul.nav li a:hover {
         ?>
         <div class="stats-summary">
             <div class="stat-item"><div class="stat-value"><?php echo $totalContacts; ?></div><div class="stat-label">Total Contacts</div></div>
-            <div class="stat-item"><div class="stat-value"><?php echo $divisionsCount; ?></div><div class="stat-label">Divisions</div></div>
-            <div class="stat-item"><div class="stat-value"><?php echo $departmentsCount; ?></div><div class="stat-label">Departments</div></div>
-            <div class="stat-item"><div class="stat-value"><?php echo $unitsCount; ?></div><div class="stat-label">Units</div></div>
             <div class="stat-item"><div class="stat-value"><?php echo $officesCount; ?></div><div class="stat-label">Offices</div></div>
             <div class="stat-item"><div class="stat-value"><?php echo $activeCount; ?></div><div class="stat-label">Active</div></div>
             <div class="stat-item"><div class="stat-value"><?php echo $decommissionedCount; ?></div><div class="stat-label">Decommissioned</div></div>
@@ -420,7 +648,6 @@ ul.nav li a:hover {
                     <th>Description</th>
                     <th>Type</th>
                     <th>Unit/Department Name</th>
-                    <th>Head</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -439,18 +666,22 @@ ul.nav li a:hover {
                         elseif($contact['status']==='decommissioned'){ $statusClass='status-decommissioned'; $statusText='Decommissioned'; }
                     }
                 ?>
-                <tr class="contact-row" data-type="<?php echo strtolower($contact['unit_type']); ?>" data-status="<?php echo isset($contact['status'])?$contact['status']:'unknown';?>">
-                    <td class="contact-number"><?php echo htmlspecialchars($contact['contact_number']); ?></td>
-                    <td class="contact-description"><?php echo htmlspecialchars($contact['description']); ?></td>
-                    <td><span class="unit-type <?php echo $typeClass;?>"><?php echo $contact['unit_type'];?></span></td>
-                    <td>
-                        <?php echo htmlspecialchars($contact['unit_name']);?>
-                        <?php if($contact['parent_division'] && $contact['unit_type']!='Division'): ?>
-                            <div class="parent-info">Under: <?php echo htmlspecialchars($contact['parent_division']);?></div>
-                        <?php endif; ?>
-                    </td>
-                    <td class="contact-head"><?php echo htmlspecialchars($contact['head']);?></td>
-                    <td><span class="status-badge <?php echo $statusClass;?>"><?php echo $statusText;?></span></td>
+                <tr class="contact-row <?php echo isLoggedIn() ? 'clickable-row' : 'non-clickable'; ?>" 
+                    <?php if(isLoggedIn()): ?>
+                        data-id="<?php echo $contact['number_id']; ?>"
+                    <?php endif; ?>
+                    data-type="<?php echo strtolower($contact['unit_type']); ?>" 
+                    data-status="<?php echo isset($contact['status'])?$contact['status']:'unknown';?>">
+                        <td class="contact-number"><?php echo htmlspecialchars($contact['contact_number']); ?></td>
+                        <td class="contact-description"><?php echo htmlspecialchars($contact['description']); ?></td>
+                        <td><span class="unit-type <?php echo $typeClass;?>"><?php echo $contact['unit_type'];?></span></td>
+                        <td>
+                            <?php echo htmlspecialchars($contact['unit_name']);?>
+                            <?php if($contact['parent_division'] && $contact['unit_type']!='Division'): ?>
+                                <div class="parent-info">Under: <?php echo htmlspecialchars($contact['parent_division']);?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td><span class="status-badge <?php echo $statusClass;?>"><?php echo $statusText;?></span></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -497,6 +728,54 @@ function filterTable(type){
         row.style.display=show?'':'none';
     });
 }
+document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('.clickable-row');
+    
+    rows.forEach(row => {
+        row.addEventListener('click', function() {
+            const contactId = this.getAttribute('data-id');
+            window.location.href = `numpage.php?id=${contactId}`;
+        });
+    });
+});
+// Admin online button interaction
+document.addEventListener('DOMContentLoaded', function() {
+    const adminBtn = document.getElementById('adminOnlineBtn');
+    const adminDropdown = document.getElementById('adminDropdown');
+    
+    if (adminBtn && adminDropdown) {
+        // Toggle dropdown on click
+        adminBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            adminDropdown.classList.toggle('show');
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!adminBtn.contains(e.target) && !adminDropdown.contains(e.target)) {
+                adminDropdown.classList.remove('show');
+            }
+        });
+        
+        // Update admin count periodically (every 30 seconds)
+        setInterval(function() {
+            fetch('get_online_admins.php')
+                .then(response => response.json())
+                .then(data => {
+                    const adminCount = document.querySelector('.admin-count');
+                    const dropdownCount = adminDropdown.querySelector('h4');
+                    
+                    if (adminCount && data.count !== undefined) {
+                        adminCount.textContent = data.count;
+                    }
+                    if (dropdownCount && data.count !== undefined) {
+                        dropdownCount.textContent = `Currently Online (${data.count})`;
+                    }
+                })
+                .catch(error => console.error('Error updating admin count:', error));
+        }, 30000); // 30 seconds
+    }
+});
 </script>
 
 </body>

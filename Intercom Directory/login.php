@@ -1,6 +1,6 @@
 <?php
 require_once 'conn.php';
-
+updateAllUsersActivity($conn);
 if (isset($_SESSION['user_id']) && !isset($_GET['logout'])) {
     header('Location: homepage.php');
     exit;
@@ -16,7 +16,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     $email = $_POST['username'];
     $password = $_POST['password'];
 
-    $stmt = $conn->prepare("SELECT user_id, username, password FROM users WHERE username = ?");
+    $stmt = $conn->prepare("SELECT user_id, username, password, role_id FROM users WHERE username = ?");
     $stmt->bind_param("s", $email);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -27,6 +27,8 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (password_verify($password, $user['password'])) {
             $_SESSION['user_id'] = $user['user_id'];
             $_SESSION['username'] = $user['username'];
+            $_SESSION['role_id'] = $user['role_id'];
+            updateUserActivity($conn, $user['user_id']);
             $success = 'Login successful! Redirecting...';
             echo '<script>setTimeout(() => window.location.href = "homepage.php", 1500)</script>';
         } else {
