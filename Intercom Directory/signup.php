@@ -68,7 +68,6 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Only proceed if all validations passed
     if(empty($error)) {
-        // Use prepared statements to prevent SQL injection
         $check_sql = "SELECT user_id FROM users WHERE username = ? OR email = ?";
         $check_stmt = mysqli_prepare($conn, $check_sql);
         mysqli_stmt_bind_param($check_stmt, "ss", $username, $email);
@@ -76,10 +75,8 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
         mysqli_stmt_store_result($check_stmt);
         
         if(mysqli_stmt_num_rows($check_stmt) > 0) {
-            // Check which one exists
             mysqli_stmt_close($check_stmt);
             
-            // Re-query to find out which field caused the conflict
             $check_user = $conn->prepare("SELECT user_id FROM users WHERE username = ?");
             $check_user->bind_param("s", $username);
             $check_user->execute();
@@ -100,15 +97,11 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
             $check_email->close();
         } else {
             mysqli_stmt_close($check_stmt);
-            
-            // Start transaction for data integrity
             mysqli_begin_transaction($conn);
             
             try {
-                // Hash the password for security
                 $password_hash = password_hash($password, PASSWORD_DEFAULT);
                 
-                // Insert user with all references using prepared statement
                 $user_sql = "INSERT INTO users (username, email, full_name, password, role_id, division_id, department_id, unit_id, office_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $user_stmt = mysqli_prepare($conn, $user_sql);
                 
@@ -125,16 +118,9 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $user_id = mysqli_insert_id($conn);
                 mysqli_stmt_close($user_stmt);
                 
-                // Auto-login after successful registration (optional)
-                // $_SESSION['user_id'] = $user_id;
-                // $_SESSION['username'] = $username;
-                // $_SESSION['role_id'] = $role_id;
-                
-                // Commit transaction
                 mysqli_commit($conn);
                 $success = "Account created successfully!";
                 
-                // Clear form fields on success
                 $username = $email = $fullname = '';
                 
             } catch (Exception $e) {
@@ -153,9 +139,337 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" type="text/css" href="style.css">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        /* Password toggle button */
+        .password-container { position: relative; }
+        #togglePassword {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            color: #2b6cb0;
+        }
+/* --- GENERAL --- */
+* { box-sizing: border-box; margin: 0; padding: 0; font-family:"Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: url('drmc.jpg') no-repeat center center fixed;
+    background-size: cover;
+    position: relative;
+}
+
+/* Overlay to dim background */
+body::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(237,244,252,0.6);
+    z-index: 0;
+}
+
+/* --- FIXED HEADER --- */
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background-color: #07417f;
+    color: white;
+    padding: 20px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-bottom: 3px solid #2b6cb0;
+}
+
+.header .logo {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.header .logo img {
+    width: 55px;
+    height: 55px;
+    object-fit: contain;
+}
+
+.header .logo span {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+/* Navigation */
+ul.nav {
+    display: flex;
+    list-style: none;
+    gap: 8px;
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 6px;
+    border-radius: 8px;
+    backdrop-filter: blur(5px);
+}
+
+ul.nav li a {
+    display: block;
+    color: white;
+    text-decoration: none;
+    padding: 10px 22px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+ul.nav li a:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+/* Specific navigation items */
+ul.nav li:first-child a {
+    background-color: #2b6cb0;
+}
+
+ul.nav li:first-child a:hover {
+    background-color: #1f4f8b;
+}
+
+ul.nav li:last-child a {
+    background-color: #38a169;
+}
+
+ul.nav li:last-child a:hover {
+    background-color: #2f855a;
+}
+
+/* --- MAIN CONTENT (adjusted for fixed header) --- */
+.main {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 100px 20px 20px; /* Extra top padding for fixed header */
+    position: relative;
+    z-index: 1;
+}
+
+/* Login Card */
+.card {
+    width: 100%;
+    max-width: 400px;
+    background-color: rgba(255,255,255,0.9);
+    border-radius: 12px;
+    padding: 30px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.card h2 {
+    text-align: center;
+    margin-bottom: 10px;
+    color: #07417f;
+    font-size: 26px;
+}
+
+.card > p { 
+    text-align: center; 
+    margin-bottom: 25px; 
+    font-size: 15px; 
+    color: #666; 
+}
+
+/* Form Elements */
+input[type=text], input[type=password] {
+    width: 100%;
+    padding: 14px;
+    margin-bottom: 16px;
+    border-radius: 8px;
+    border: 1px solid #ccd6e3;
+    font-size: 15px;
+    transition: all 0.2s;
+}
+
+input:focus { 
+    outline: none; 
+    border-color: #2b6cb0; 
+    box-shadow: 0 0 0 3px rgba(43,108,176,0.15); 
+}
+
+/* Password container */
+.password-container { 
+    position: relative; 
+    margin-bottom: 5px;
+}
+
+#togglePassword {
+    position: absolute;
+    right: 12px; 
+    top: 50%;
+    transform: translateY(-50%);
+    border: none; 
+    background: none;
+    cursor: pointer; 
+    color: #2b6cb0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* Login Button */
+button.login-btn {
+    width: 100%;
+    padding: 15px;
+    background-color: #2b6cb0;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-top: 10px;
+}
+
+button.login-btn:hover {
+    background-color: #1f4f8b;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+}
+
+/* Error/Success Messages */
+p[style*="color:red"], 
+p[style*="color:green"] {
+    text-align: center;
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+p[style*="color:red"] {
+    background-color: rgba(255, 0, 0, 0.05);
+    border-left: 4px solid #f44336;
+}
+
+p[style*="color:green"] {
+    background-color: rgba(0, 255, 0, 0.05);
+    border-left: 4px solid #4CAF50;
+}
+
+/* Create Account Section */
+.actions { 
+    margin-top: 25px; 
+}
+
+.divider { 
+    height: 1px; 
+    background: #e2ebf6; 
+    margin: 20px 0; 
+}
+
+.create-btn {
+    display: block;
+    padding: 14px;
+    text-align: center;
+    border-radius: 8px;
+    border: 2px solid #2b6cb0;
+    background: #fff; 
+    color: #2b6cb0;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    font-size: 15px;
+}
+
+.create-btn:hover { 
+    background: #2b6cb0; 
+    color: #fff; 
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(43,108,176,0.2);
+}
+
+/* --- FOOTER --- */
+.footer {
+    background-color: #07417f;
+    color: #fff;
+    text-align: center;
+    padding: 18px 10px;
+    font-size: 14px;
+    position: relative;
+    z-index: 1;
+    margin-top: auto;
+}
+
+/* --- RESPONSIVE DESIGN --- */
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        padding: 15px;
+        gap: 15px;
+        text-align: center;
+    }
+    
+    .header .logo span {
+        font-size: 1.3rem;
+    }
+    
+    ul.nav {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    ul.nav li a {
+        padding: 8px 16px;
+        font-size: 0.9rem;
+    }
+    
+    .main {
+        padding: 130px 15px 20px; /* More top padding for mobile */
+    }
+    
+    .card {
+        padding: 25px;
+    }
+}
+
+@media (max-width: 480px) {
+    .header .logo span {
+        font-size: 1.1rem;
+    }
+    
+    .header .logo img {
+        width: 45px;
+        height: 45px;
+    }
+    
+    ul.nav {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    ul.nav li a {
+        padding: 8px 14px;
+        font-size: 0.85rem;
+    }
+}
+</style>
+    </style>
 </head>
 <body>
-    <!-- HEADER -->
     <div class="header">
         <div class="logo">
             <img src="hospitalLogo.png" alt="Hospital Logo">
@@ -163,7 +477,6 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- MAIN -->
     <div class="main">
         <div class="card">
             <h2>Create Account</h2>
@@ -194,10 +507,10 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="text" id="username" name="username" placeholder="Enter username" required 
                        value="<?php echo htmlspecialchars($username); ?>">
 
-                <label for="password">Password <span class="required">*</span></label>
                 <div class="password-container">
-                    <input type="password" id="password" name="password" placeholder="Enter password (min. 8 characters)" required>
-                    <span class="toggle-password" onclick="togglePasswordVisibility()">👁️</span>
+                    <label for="password" class="sr-only">Password</label>
+                    <input id="password" type="password" name="password" placeholder="Password" required autocomplete="current-password">
+                    <button type="button" id="togglePassword">Show</button>
                 </div>
                 <small>Password must be at least 8 characters long</small>
 
@@ -247,18 +560,23 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
         © 2026 Intercom Directory. All rights reserved.<br>
         Developed by TNTS Programming Students JT.DP.RR
     </div>
-</body>
-<script>
-// Toggle password visibility
-function togglePasswordVisibility() {
-    const passwordField = document.getElementById('password');
-    if (passwordField.type === 'password') {
-        passwordField.type = 'text';
-    } else {
-        passwordField.type = 'password';
-    }
-}
 
+<script>
+// Show/hide password
+const passwordInput = document.getElementById('password');
+const togglePasswordBtn = document.getElementById('togglePassword');
+
+togglePasswordBtn.addEventListener('click', () => {
+    if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        togglePasswordBtn.textContent = 'Hide';
+    } else {
+        passwordInput.type = 'password';
+        togglePasswordBtn.textContent = 'Show';
+    }
+});
+
+// Role-based field toggles
 function toggleFields() {
     const roleId = parseInt(document.getElementById('role').value);
     const division = document.getElementById('division');
@@ -266,7 +584,6 @@ function toggleFields() {
     const unit = document.getElementById('unit');
     const office = document.getElementById('office');
     
-    // Reset all fields
     [department, unit, office].forEach(field => {
         field.disabled = true;
         field.required = false;
@@ -276,33 +593,21 @@ function toggleFields() {
     division.disabled = true;
     division.required = false;
     
-    // Enable based on role
     if ([3, 4, 5, 6, 7].includes(roleId)) {
         division.disabled = false;
         division.required = true;
     }
-    
     if ([4, 5, 6, 7].includes(roleId)) {
         department.disabled = false;
         department.required = true;
     }
-    
     if ([5, 6, 7].includes(roleId)) {
         unit.disabled = false;
         unit.required = true;
     }
-    
     if ([6, 7].includes(roleId)) {
         office.disabled = false;
         office.required = true;
-    }
-    
-    // Clear dependent fields when role changes
-    if (roleId < 4) {
-        division.value = '';
-    }
-    if (roleId < 5) {
-        loadDepartments('');
     }
 }
 
@@ -313,20 +618,10 @@ function loadDepartments(divisionId) {
         document.getElementById('office').innerHTML = '<option value="">Select Office</option>';
         return;
     }
-    
-    $.ajax({
-        url: 'ajax_get_departments.php',
-        type: 'POST',
-        data: {division_id: divisionId},
-        success: function(response) {
-            $('#department').html(response);
-            $('#unit').html('<option value="">Select Unit</option>');
-            $('#office').html('<option value="">Select Office</option>');
-        },
-        error: function(xhr, status, error) {
-            console.error("Error loading departments:", error);
-            $('#department').html('<option value="">Error loading departments</option>');
-        }
+    $.post('ajax_get_departments.php', {division_id: divisionId}, function(response) {
+        $('#department').html(response);
+        $('#unit').html('<option value="">Select Unit</option>');
+        $('#office').html('<option value="">Select Office</option>');
     });
 }
 
@@ -336,19 +631,9 @@ function loadUnits(departmentId) {
         document.getElementById('office').innerHTML = '<option value="">Select Office</option>';
         return;
     }
-    
-    $.ajax({
-        url: 'ajax_get_units.php',
-        type: 'POST',
-        data: {department_id: departmentId},
-        success: function(response) {
-            $('#unit').html(response);
-            $('#office').html('<option value="">Select Office</option>');
-        },
-        error: function(xhr, status, error) {
-            console.error("Error loading units:", error);
-            $('#unit').html('<option value="">Error loading units</option>');
-        }
+    $.post('ajax_get_units.php', {department_id: departmentId}, function(response) {
+        $('#unit').html(response);
+        $('#office').html('<option value="">Select Office</option>');
     });
 }
 
@@ -357,79 +642,23 @@ function loadOffices(unitId) {
         document.getElementById('office').innerHTML = '<option value="">Select Office</option>';
         return;
     }
-    
-    $.ajax({
-        url: 'ajax_get_offices.php',
-        type: 'POST',
-        data: {unit_id: unitId},
-        success: function(response) {
-            $('#office').html(response);
-        },
-        error: function(xhr, status, error) {
-            console.error("Error loading offices:", error);
-            $('#office').html('<option value="">Error loading offices</option>');
-        }
+    $.post('ajax_get_offices.php', {unit_id: unitId}, function(response) {
+        $('#office').html(response);
     });
 }
 
-// Client-side form validation
 function validateForm() {
     const password = document.getElementById('password').value;
-    const email = document.getElementById('email').value;
-    const roleId = parseInt(document.getElementById('role').value);
-    const division = document.getElementById('division');
-    const department = document.getElementById('department');
-    const unit = document.getElementById('unit');
-    const office = document.getElementById('office');
-    
-    // Password validation
     if (password.length < 8) {
         alert("Password must be at least 8 characters long!");
         return false;
     }
-    
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-        alert("Please enter a valid email address!");
-        return false;
-    }
-    
-    // Role-based validation
-    if (roleId >= 3 && division.value === '') {
-        alert("Division is required for this role!");
-        return false;
-    }
-    if (roleId >= 4 && department.value === '') {
-        alert("Department is required for this role!");
-        return false;
-    }
-    if (roleId >= 5 && unit.value === '') {
-        alert("Unit is required for this role!");
-        return false;
-    }
-    if (roleId >= 6 && office.value === '') {
-        alert("Office is required for this role!");
-        return false;
-    }
-    
     return true;
 }
 
-// Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('role').addEventListener('change', toggleFields);
-    
-    // Prevent form resubmission on page refresh
-    if (window.history.replaceState) {
-        window.history.replaceState(null, null, window.location.href);
-    }
-    
-    // Auto-populate form if there were errors
-    const roleId = document.getElementById('role').value;
-    if (roleId) {
-        toggleFields();
-    }
 });
 </script>
+</body>
 </html>
