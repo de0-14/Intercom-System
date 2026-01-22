@@ -209,12 +209,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (strlen($message) > 1000) {
                 $message_error = "Message is too long (max 1000 characters).";
             } else {
+                // Get head user ID for this contact
                 $head_user_id = getHeadUserId($conn, $number_id);
-                $head_name = getHeadName($conn, $number_id);
                 
                 if (!$head_user_id) {
                     $message_error = "Cannot send message: Head user not found for this contact.";
                 } else {
+                    // Check if conversation already exists
                     $check_conversation = $conn->prepare("
                         SELECT conversation_id FROM conversations 
                         WHERE number_id = ? AND initiated_by = ?
@@ -229,6 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $conversation_id = $conv_row['conversation_id'];
                         $check_conversation->close();
                     } else {
+                        // Create new conversation
                         $create_conversation = $conn->prepare("
                             INSERT INTO conversations (number_id, initiated_by) 
                             VALUES (?, ?)
@@ -245,22 +247,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     if ($conversation_id) {
-                        $insert_message = $conn->prepare("
-                            INSERT INTO messages (sender_id, receiver_id, number_id, conversation_id, message, created_at) 
-                            VALUES (?, ?, ?, ?, ?, NOW())
-                        ");
-                        $insert_message->bind_param("iiisi", $user_id, $head_user_id, $number_id, $conversation_id, $message);
-                        
-                        if ($insert_message->execute()) {
-                            $message_success = "Message sent to " . htmlspecialchars($contact['head']) . "!";
-                            $_POST['message'] = '';
-                            header("Location: $current_script?id=$number_id&conversation_id=$conversation_id");
-                            exit;
+                        if (empty($head_user_id) || $head_user_id <= 0) {
+                            $message_error = "Invalid head user ID: $head_user_id";
                         } else {
-                            $message_error = "Failed to send message. Error: " . $conn->error;
+                            // Insert the message with correct receiver_id (head user)
+                            $insert_message = $conn->prepare("
+                                INSERT INTO messages (sender_id, receiver_id, number_id, conversation_id, message, created_at) 
+                                VALUES (?, ?, ?, ?, ?, NOW())
+                            ");
+                            $insert_message->bind_param("iiiis", $user_id, $head_user_id, $number_id, $conversation_id, $message);
+                            
+                            // In send_message section (around line 150):
+                            if ($insert_message->execute()) {
+                                $message_success = "Message sent to " . htmlspecialchars($contact['head']) . "!";
+                                $_POST['message'] = '';
+                                header("Location: $current_script?id=$number_id&conversation_id=$conversation_id");
+                                exit;
+                            } else {
+                                // Add more detailed error
+                                $message_error = "Failed to send message. SQL Error: " . $conn->error . 
+                                                ". Params: sender=$user_id, receiver=$head_user_id, conv=$conversation_id";
+                            }
+                            $insert_message->close();
                         }
-                        $insert_message->close();
-                    }
+                    }   
                 }
             }
         }
@@ -280,7 +290,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (!$conversation_id) {
                 $message_error = "Conversation ID is missing.";
             } else {
-                $conv_info = $conn->prepare("SELECT initiated_by FROM conversations WHERE conversation_id = ?");
+                // Get conversation info to determine who should receive the reply
+                $conv_info = $conn->prepare("
+                    SELECT c.*, u.username as initiator_name, u.full_name as initiator_full_name 
+                    FROM conversations c
+                    JOIN users u ON c.initiated_by = u.user_id
+                    WHERE c.conversation_id = ?
+                ");
                 $conv_info->bind_param("i", $conversation_id);
                 $conv_info->execute();
                 $conv_result = $conv_info->get_result();
@@ -288,14 +304,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $conv_info->close();
                 
                 if ($conv_data) {
-                    $receiver_id = $conv_data['initiated_by'];
-                    $sender_id = $user_id;
+                    // Determine receiver based on who is replying
+                    if ($user_id == $conv_data['initiated_by']) {
+                        // User is replying to head - head should receive
+                        $head_user_id = getHeadUserId($conn, $number_id);
+                        $receiver_id = $head_user_id;
+                    } else {
+                        // Head is replying - original user should receive
+                        $receiver_id = $conv_data['initiated_by'];
+                    }
                     
                     $insert_reply = $conn->prepare("
                         INSERT INTO messages (sender_id, receiver_id, number_id, conversation_id, message, is_head_reply, created_at) 
-                        VALUES (?, ?, ?, ?, ?, 1, NOW())
+                        VALUES (?, ?, ?, ?, ?, ?, NOW())
                     ");
-                    $insert_reply->bind_param("iiisi", $sender_id, $receiver_id, $number_id, $conversation_id, $reply_message);
+                    $is_head_reply = ($user_id != $conv_data['initiated_by']) ? 1 : 0;
+                    $insert_reply->bind_param("iiiisi", $user_id, $receiver_id, $number_id, $conversation_id, $reply_message, $is_head_reply);
                     
                     if ($insert_reply->execute()) {
                         $message_success = "Reply sent successfully!";
@@ -385,6 +409,7 @@ if ($user_id) {
             JOIN users u ON c.initiated_by = u.user_id
             LEFT JOIN messages m ON c.conversation_id = m.conversation_id
             WHERE c.number_id = ?
+            AND EXISTS (SELECT 1 FROM messages WHERE conversation_id = c.conversation_id)  -- Only show conversations with messages
             GROUP BY c.conversation_id
             ORDER BY last_message_time DESC
         ";
@@ -405,6 +430,7 @@ if ($user_id) {
             JOIN users u ON c.initiated_by = u.user_id
             LEFT JOIN messages m ON c.conversation_id = m.conversation_id
             WHERE c.number_id = ? AND c.initiated_by = ?
+            AND EXISTS (SELECT 1 FROM messages WHERE conversation_id = c.conversation_id)  -- Only show conversations with messages
             GROUP BY c.conversation_id
             ORDER BY last_message_time DESC
         ";
@@ -970,19 +996,18 @@ $is_head = ($head_user_id == $user_id);
                     </div>
                     
                     <div class="chat-input-area">
-                        <?php if ($user_id == $selected_conversation_info['initiated_by']): ?>
-                            <form method="POST" class="chat-input-form" id="chatForm">
-                                <input type="hidden" name="conversation_id" value="<?php echo $selected_conversation_id; ?>">
+                        <form method="POST" class="chat-input-form" id="chatForm">
+                            <input type="hidden" name="conversation_id" value="<?php echo $selected_conversation_id; ?>">
+                            <?php if ($user_id == $selected_conversation_info['initiated_by']): ?>
+                                <!-- Regular user sending to head -->
                                 <textarea class="chat-input" name="message" id="messageInput" placeholder="Type your message here..." required></textarea>
                                 <button type="submit" name="send_message" class="chat-send-btn">📤</button>
-                            </form>
-                        <?php else: ?>
-                            <form method="POST" class="chat-input-form" id="chatForm">
-                                <input type="hidden" name="conversation_id" value="<?php echo $selected_conversation_id; ?>">
+                            <?php else: ?>
+                                <!-- Head replying to user -->
                                 <textarea class="chat-input" name="reply_message" id="replyInput" placeholder="Type your reply here..." required></textarea>
                                 <button type="submit" name="send_reply" class="chat-send-btn">↩️</button>
-                            </form>
-                        <?php endif; ?>
+                            <?php endif; ?>
+                        </form>
                     </div>
                 </div>
             <?php elseif (!empty($conversations)): ?>
@@ -1080,38 +1105,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatForm = document.getElementById('chatForm');
     
     if (chatForm) {
-        const messageInput = document.getElementById('messageInput') || document.getElementById('replyInput');
-        
         chatForm.addEventListener('submit', function(e) {
-            e.preventDefault();
+            // DON'T prevent default - let the form submit normally
+            // This avoids the "0" message problem
+            const messageInput = document.getElementById('messageInput') || document.getElementById('replyInput');
+            const message = messageInput ? messageInput.value.trim() : '';
             
-            const formData = new FormData(this);
-            const message = messageInput.value.trim();
-            
-            if (message) {
-                fetch(this.action, {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => {
-                    if (response.redirected) {
-                        window.location.href = response.url;
-                    } else {
-                        location.reload();
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    location.reload();
-                });
+            // Simple validation
+            if (!message || message === '') {
+                e.preventDefault();
+                alert('Please enter a message');
+                return false;
             }
+            
+            // Allow normal form submission
+            return true;
         });
         
+        // Still allow Enter key to submit, but don't prevent default
+        const messageInput = document.getElementById('messageInput') || document.getElementById('replyInput');
         if (messageInput) {
             messageInput.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    chatForm.dispatchEvent(new Event('submit'));
+                    chatForm.submit();
                 }
             });
             
