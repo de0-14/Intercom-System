@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 22, 2026 at 12:53 AM
+-- Generation Time: Jan 22, 2026 at 05:28 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -49,9 +49,9 @@ CREATE TABLE `conversations` (
 --
 
 INSERT INTO `conversations` (`conversation_id`, `number_id`, `initiated_by`, `created_at`) VALUES
-(1, 13, 4, '2026-01-21 07:22:30'),
-(2, 7, 4, '2026-01-21 08:46:30'),
-(3, 6, 4, '2026-01-21 23:50:14');
+(1, 2, 4, '2026-01-22 04:25:53'),
+(2, 2, 4, '2026-01-22 04:26:14'),
+(3, 2, 4, '2026-01-22 04:26:30');
 
 -- --------------------------------------------------------
 
@@ -71,11 +71,7 @@ CREATE TABLE `departments` (
 --
 
 INSERT INTO `departments` (`department_id`, `department_name`, `division_id`, `status`) VALUES
-(1, 'department 1', 1, 'active'),
-(2, 'department 2', 2, 'active'),
-(3, 'department 3', 1, 'active'),
-(5, 'Nursing', 6, 'active'),
-(6, 'OPS', 7, 'active');
+(2, 'ICU', 2, 'active');
 
 -- --------------------------------------------------------
 
@@ -94,11 +90,7 @@ CREATE TABLE `divisions` (
 --
 
 INSERT INTO `divisions` (`division_id`, `division_name`, `status`) VALUES
-(1, 'division 1', 'decommissioned'),
-(2, 'division 2', 'active'),
-(3, 'division 3', 'active'),
-(6, 'Medical', 'active'),
-(7, 'Hospital Operations', 'active');
+(2, 'Nursing', 'active');
 
 -- --------------------------------------------------------
 
@@ -121,9 +113,8 @@ CREATE TABLE `feedback` (
 --
 
 INSERT INTO `feedback` (`feedback_id`, `number_id`, `user_id`, `rating`, `comment`, `created_at`, `updated_at`) VALUES
-(2, 6, 1, 4, 'meh', '2026-01-21 10:50:21', '2026-01-21 11:25:01'),
-(3, 3, 1, 1, 'wowers', '2026-01-21 10:50:30', '2026-01-21 10:50:30'),
-(4, 6, 4, 3, 'you mid', '2026-01-21 13:02:21', '2026-01-21 13:02:21');
+(1, 2, 2, 5, 'niggers', '2026-01-22 11:04:05', '2026-01-22 11:04:05'),
+(2, 2, 4, 5, 'nicenice', '2026-01-22 12:25:38', '2026-01-22 12:25:38');
 
 -- --------------------------------------------------------
 
@@ -152,11 +143,9 @@ CREATE TABLE `messages` (
 --
 
 INSERT INTO `messages` (`message_id`, `sender_id`, `receiver_id`, `receiver_head`, `number_id`, `conversation_id`, `message`, `created_at`, `updated_at`, `is_read`, `parent_message_id`, `chat_thread`, `is_head_reply`) VALUES
-(1, 1, NULL, 'John Cena', 13, NULL, 'sup g', '2026-01-21 09:00:58', '2026-01-21 14:49:58', 0, NULL, 'chat_1_e35dedd267261eebb310b95e8e73c19b_1768978198', 0),
-(2, 1, NULL, 'Roy Nino Salas', 6, NULL, 'sup g', '2026-01-21 11:32:56', '2026-01-21 14:49:58', 0, NULL, 'chat_1_57d9c5f08e36d017745d11ec7be7cb53_1768978198', 0),
-(3, 4, NULL, NULL, 13, 1, 'yo sup', '2026-01-21 15:22:30', '2026-01-21 15:22:30', 0, NULL, NULL, 0),
-(4, 4, NULL, NULL, 7, 2, 'sup', '2026-01-21 16:46:30', '2026-01-21 16:46:30', 0, NULL, NULL, 0),
-(5, 4, NULL, NULL, 6, 3, 'sup g', '2026-01-22 07:50:14', '2026-01-22 07:50:14', 0, NULL, NULL, 0);
+(1, 4, NULL, NULL, 2, 1, 'ts nice cuh', '2026-01-22 12:25:54', '2026-01-22 12:25:54', 0, NULL, NULL, 0),
+(2, 4, NULL, NULL, 2, 2, 'nicenice', '2026-01-22 12:26:14', '2026-01-22 12:26:14', 0, NULL, NULL, 0),
+(3, 4, NULL, NULL, 2, 3, 'cuh', '2026-01-22 12:26:30', '2026-01-22 12:26:30', 0, NULL, NULL, 0);
 
 -- --------------------------------------------------------
 
@@ -165,10 +154,10 @@ INSERT INTO `messages` (`message_id`, `sender_id`, `receiver_id`, `receiver_head
 --
 
 CREATE TABLE `numbers` (
-  `numbers` int(11) NOT NULL,
+  `numbers` varchar(20) NOT NULL,
   `description` text NOT NULL,
-  `head` text NOT NULL,
-  `head_user_id` int(11) DEFAULT NULL,
+  `head_user_id` int(11) NOT NULL,
+  `head` varchar(255) DEFAULT NULL,
   `division_id` int(11) DEFAULT NULL,
   `department_id` int(11) DEFAULT NULL,
   `unit_id` int(11) DEFAULT NULL,
@@ -181,19 +170,11 @@ CREATE TABLE `numbers` (
 -- Dumping data for table `numbers`
 --
 
-INSERT INTO `numbers` (`numbers`, `description`, `head`, `head_user_id`, `division_id`, `department_id`, `unit_id`, `office_id`, `number_id`, `status`) VALUES
-(1234, 'Landline', 'Deover Pasco Jr.', NULL, 6, NULL, NULL, NULL, 3, 'active'),
-(1234, 'Intercom', 'Deover Pasco Jr.', NULL, 6, NULL, NULL, NULL, 4, 'active'),
-(4321, 'SMS', 'Rain Winslet Reyes', NULL, NULL, 5, NULL, NULL, 5, 'active'),
-(9999, 'SMS', 'Roy Nino Salas', NULL, 7, NULL, NULL, NULL, 6, 'active'),
-(9999, 'Intercom', 'Roy Nino Salas', NULL, 7, NULL, NULL, NULL, 7, 'active'),
-(5643, 'Intercom', 'Ealdrick James  Raganas', NULL, NULL, 6, NULL, NULL, 8, 'active'),
-(42335, 'Landline', 'Ealdrick James  Raganas', NULL, NULL, 6, NULL, NULL, 9, 'active'),
-(67, 'Landline', 'Godwin Solis', NULL, NULL, NULL, 3, NULL, 10, 'active'),
-(68, 'Landline', 'Hubert', NULL, NULL, NULL, 1, NULL, 11, 'active'),
-(2147483647, 'Landline', 'Cris Jhan', NULL, NULL, NULL, NULL, 2, 12, 'active'),
-(69420, 'Landline', 'John Cena', NULL, 1, NULL, NULL, NULL, 13, 'decommissioned'),
-(2147483647, 'Landline', 'Lukas blalba', NULL, NULL, NULL, NULL, 3, 14, 'active');
+INSERT INTO `numbers` (`numbers`, `description`, `head_user_id`, `head`, `division_id`, `department_id`, `unit_id`, `office_id`, `number_id`, `status`) VALUES
+('1234', 'Landline', 2, 'dev', 2, NULL, NULL, NULL, 2, 'active'),
+('69420', 'Intercom', 2, 'JDLT', NULL, 2, NULL, NULL, 4, 'active'),
+('9999', 'SMS', 2, 'JDLT', NULL, NULL, 1, NULL, 5, 'active'),
+('5643', 'Landline', 2, 'JDLT', NULL, NULL, NULL, 1, 6, 'active');
 
 -- --------------------------------------------------------
 
@@ -213,9 +194,7 @@ CREATE TABLE `offices` (
 --
 
 INSERT INTO `offices` (`office_id`, `office_name`, `unit_id`, `status`) VALUES
-(1, 'HR', 3, 'active'),
-(2, 'office 67', 3, 'active'),
-(3, 'office 420', 3, 'active');
+(1, 'Medical', 1, 'active');
 
 -- --------------------------------------------------------
 
@@ -259,9 +238,7 @@ CREATE TABLE `units` (
 --
 
 INSERT INTO `units` (`unit_id`, `unit_name`, `department_id`, `status`) VALUES
-(1, 'unit 1', 1, 'active'),
-(2, 'unit 2', 2, 'active'),
-(3, 'unitundernursing', 5, 'active');
+(1, 'ICU UNIT', 2, 'active');
 
 -- --------------------------------------------------------
 
@@ -274,7 +251,7 @@ CREATE TABLE `users` (
   `username` varchar(50) NOT NULL,
   `password` varchar(255) NOT NULL,
   `email` varchar(100) DEFAULT NULL,
-  `full_name` varchar(100) DEFAULT NULL,
+  `full_name` text NOT NULL,
   `role_id` int(11) NOT NULL,
   `division_id` int(11) DEFAULT NULL,
   `department_id` int(11) DEFAULT NULL,
@@ -289,10 +266,9 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password`, `email`, `full_name`, `role_id`, `division_id`, `department_id`, `unit_id`, `office_id`, `status`, `last_activity`) VALUES
-(1, 'admintest', '$2y$10$JdoWmxeMwRwNXSgid775a.f.EzmhiFEbCzkz6Mz8ujcu.BkQpS28O', NULL, NULL, 1, NULL, NULL, NULL, NULL, 'active', 1769038541),
-(2, 'jdADMIN', '$2y$10$kXa/V.J0goFobRXrWKe3Bu3LjRB56g0QwIiA/mny9MiImTXL4aIX.', 'dalvyx123@gmail.com', 'JDLT', 4, 6, 5, NULL, NULL, 'active', 0),
-(3, 'reign', '$2y$10$36eZEKyskm2w73VvSerYmua1rve/oJiZqb.DFtHEkfyQ8XgIdRLG.', 'raignewinsletreyes@gmail.com', 'raigne winslet a. reyes', 1, NULL, NULL, NULL, NULL, 'active', 0),
-(4, 'ricky', '$2y$10$A6Iq5VpqFY7l1heRWLYcJ.2jsfar8mRl.6Rh2xX7dypgi/nXA.qfy', 'junjun@gmail.com', 'Ricardo Diaz', 4, 7, 6, NULL, NULL, 'active', 1769039403);
+(2, 'admin', '$2y$10$1cl.dBem3urTDopqun8h5eGJkcdXYYyjG/onkmQLn5E.s7YwqohC.', 'dalvyx123@gmail.com', 'JDLT', 1, NULL, NULL, NULL, NULL, 'active', 1769055867),
+(3, 'dev', '$2y$10$zWN7BcpCrAWGZ.89Icx/H.251E/Lzr948O5j.TEGkrRKsIW.o5hr6', 'dev@gmail.com', 'dev', 3, 2, NULL, NULL, NULL, 'active', 1769056037),
+(4, 'JD', '$2y$10$7O8nslOzqvV4c/Rz4rB0duzm0utvTIPIMTDhcJdGjyjw6INA7739W', 'joseph@gmail.com', 'Joseph Talattag', 7, 2, 2, 1, 1, 'active', 1769055922);
 
 -- --------------------------------------------------------
 
@@ -361,7 +337,7 @@ ALTER TABLE `numbers`
   ADD KEY `department_id` (`department_id`),
   ADD KEY `unit_id` (`unit_id`),
   ADD KEY `office_id` (`office_id`),
-  ADD KEY `fk_numbers_head_user_id` (`head_user_id`);
+  ADD KEY `head_user_id` (`head_user_id`);
 
 --
 -- Indexes for table `offices`
@@ -399,7 +375,8 @@ ALTER TABLE `users`
 -- Indexes for table `user_online_status`
 --
 ALTER TABLE `user_online_status`
-  ADD PRIMARY KEY (`user_id`);
+  ADD PRIMARY KEY (`user_id`),
+  ADD KEY `user_id` (`user_id`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -415,49 +392,43 @@ ALTER TABLE `conversations`
 -- AUTO_INCREMENT for table `departments`
 --
 ALTER TABLE `departments`
-  MODIFY `department_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `department_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `divisions`
 --
 ALTER TABLE `divisions`
-  MODIFY `division_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `division_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `feedback`
 --
 ALTER TABLE `feedback`
-  MODIFY `feedback_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `feedback_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `messages`
 --
 ALTER TABLE `messages`
-  MODIFY `message_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `message_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `numbers`
 --
 ALTER TABLE `numbers`
-  MODIFY `number_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+  MODIFY `number_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `offices`
 --
 ALTER TABLE `offices`
-  MODIFY `office_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
-
---
--- AUTO_INCREMENT for table `roles`
---
-ALTER TABLE `roles`
-  MODIFY `role_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `office_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `units`
 --
 ALTER TABLE `units`
-  MODIFY `unit_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `unit_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -493,49 +464,49 @@ ALTER TABLE `feedback`
 -- Constraints for table `messages`
 --
 ALTER TABLE `messages`
-  ADD CONSTRAINT `fk_messages_conversation_id` FOREIGN KEY (`conversation_id`) REFERENCES `conversations` (`conversation_id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `messages_ibfk_1` FOREIGN KEY (`sender_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `messages_ibfk_2` FOREIGN KEY (`number_id`) REFERENCES `numbers` (`number_id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `messages_ibfk_3` FOREIGN KEY (`receiver_id`) REFERENCES `users` (`user_id`) ON DELETE SET NULL,
-  ADD CONSTRAINT `messages_ibfk_4` FOREIGN KEY (`parent_message_id`) REFERENCES `messages` (`message_id`) ON DELETE SET NULL;
+  ADD CONSTRAINT `conid` FOREIGN KEY (`conversation_id`) REFERENCES `conversations` (`conversation_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `numbb` FOREIGN KEY (`number_id`) REFERENCES `numbers` (`number_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `recieve` FOREIGN KEY (`receiver_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `send` FOREIGN KEY (`sender_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `numbers`
 --
 ALTER TABLE `numbers`
-  ADD CONSTRAINT `department` FOREIGN KEY (`department_id`) REFERENCES `departments` (`department_id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `divsion` FOREIGN KEY (`division_id`) REFERENCES `divisions` (`division_id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_numbers_head_user_id` FOREIGN KEY (`head_user_id`) REFERENCES `users` (`user_id`) ON DELETE SET NULL,
-  ADD CONSTRAINT `office` FOREIGN KEY (`office_id`) REFERENCES `offices` (`office_id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `unit` FOREIGN KEY (`unit_id`) REFERENCES `units` (`unit_id`) ON DELETE CASCADE ON UPDATE CASCADE;
+  ADD CONSTRAINT `numbers_ibfk_1` FOREIGN KEY (`division_id`) REFERENCES `divisions` (`division_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `numbers_ibfk_2` FOREIGN KEY (`department_id`) REFERENCES `departments` (`department_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `numbers_ibfk_3` FOREIGN KEY (`unit_id`) REFERENCES `units` (`unit_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `numbers_ibfk_4` FOREIGN KEY (`office_id`) REFERENCES `offices` (`office_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `numbers_ibfk_5` FOREIGN KEY (`head_user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `userasasd` FOREIGN KEY (`head_user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `offices`
 --
 ALTER TABLE `offices`
-  ADD CONSTRAINT `offices_ibfk_1` FOREIGN KEY (`unit_id`) REFERENCES `units` (`unit_id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `unit_ofice` FOREIGN KEY (`unit_id`) REFERENCES `units` (`unit_id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `units`
 --
 ALTER TABLE `units`
-  ADD CONSTRAINT `units_ibfk_1` FOREIGN KEY (`department_id`) REFERENCES `departments` (`department_id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `department_unit` FOREIGN KEY (`department_id`) REFERENCES `departments` (`department_id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `users`
 --
 ALTER TABLE `users`
-  ADD CONSTRAINT `users_ibfk_1` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`),
-  ADD CONSTRAINT `users_ibfk_2` FOREIGN KEY (`division_id`) REFERENCES `divisions` (`division_id`),
-  ADD CONSTRAINT `users_ibfk_3` FOREIGN KEY (`department_id`) REFERENCES `departments` (`department_id`),
-  ADD CONSTRAINT `users_ibfk_4` FOREIGN KEY (`unit_id`) REFERENCES `units` (`unit_id`),
-  ADD CONSTRAINT `users_ibfk_5` FOREIGN KEY (`office_id`) REFERENCES `offices` (`office_id`);
+  ADD CONSTRAINT `department` FOREIGN KEY (`department_id`) REFERENCES `departments` (`department_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `division` FOREIGN KEY (`division_id`) REFERENCES `divisions` (`division_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `office` FOREIGN KEY (`office_id`) REFERENCES `offices` (`office_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `unit` FOREIGN KEY (`unit_id`) REFERENCES `units` (`unit_id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `user_online_status`
 --
 ALTER TABLE `user_online_status`
-  ADD CONSTRAINT `user_online_status_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `status_users` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

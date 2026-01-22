@@ -2,31 +2,53 @@
 require_once 'conn.php';
 require_once 'config.php';
 updateAllUsersActivity($conn);
+
+// Get users who can be heads (Admins or Department Heads)
+$headUsersQuery = mysqli_query($conn, "SELECT user_id, username, full_name FROM users WHERE role_id IN (1, 4) ORDER BY username");
+$headUsers = [];
+while($user = mysqli_fetch_assoc($headUsersQuery)) {
+    $headUsers[] = $user;
+}
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $response = ['success' => false, 'message' => ''];
 
     try {
         $departmentName = trim($_POST['name']);
-        $departmentHead = trim($_POST['head']);
-        $underDivision = trim($_POST['under']); // Division handling this department
-
-        $divisions = getDivisions($conn);
+        $headUsername = trim($_POST['head']); // This should be username
+        $underDivision = (int)$_POST['under']; // Division handling this department
 
         if (empty($departmentName)) throw new Exception("Department name is required.");
-        if (empty($departmentHead)) throw new Exception("Department Head is required.");
+        if (empty($headUsername)) throw new Exception("Department Head is required.");
         if (empty($underDivision)) throw new Exception("Please select a division.");
 
-        // Check if department exists
-        $checkStmt = $conn->prepare("SELECT department_id FROM departments WHERE department_name = ?");
-        $checkStmt->bind_param("s", $departmentName);
+        // Check if department already exists under this division
+        $checkStmt = $conn->prepare("SELECT department_id FROM departments WHERE department_name = ? AND division_id = ?");
+        $checkStmt->bind_param("si", $departmentName, $underDivision);
         $checkStmt->execute();
         $checkStmt->store_result();
-        if ($checkStmt->num_rows > 0) throw new Exception("Department '$departmentName' already exists.");
+        if ($checkStmt->num_rows > 0) throw new Exception("Department '$departmentName' already exists in this division.");
         $checkStmt->close();
+
+        // Get head user ID from username
+        $headQuery = $conn->prepare("SELECT user_id, full_name FROM users WHERE username = ?");
+        $headQuery->bind_param("s", $headUsername);
+        $headQuery->execute();
+        $headResult = $headQuery->get_result();
+        
+        if ($headResult->num_rows === 0) {
+            throw new Exception("Head user '$headUsername' not found in the system.");
+        }
+        
+        $headUser = $headResult->fetch_assoc();
+        $headUserId = $headUser['user_id'];
+        $headFullName = $headUser['full_name'];
+        $headQuery->close();
 
         $conn->begin_transaction();
 
+        // Insert department
         $stmt = $conn->prepare("INSERT INTO departments (department_name, division_id, status) VALUES (?, ?, 'active')");
         $stmt->bind_param("si", $departmentName, $underDivision);
         if (!$stmt->execute()) throw new Exception("Failed to create department: " . $stmt->error);
@@ -35,14 +57,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Process contact numbers
         if (isset($_POST['numbers'])) {
-            $phoneStmt = $conn->prepare("INSERT INTO numbers (numbers, description, head, department_id) VALUES (?, ?, ?, ?)");
+            $phoneStmt = $conn->prepare("INSERT INTO numbers (numbers, description, head_user_id, head, department_id) VALUES (?, ?, ?, ?, ?)");
+            
             foreach ($_POST['numbers'] as $index => $numberData) {
                 $phoneNumber = trim($numberData['number']);
                 if (!empty($phoneNumber)) {
-                    if (isset($numberData['types'])) {
-                        foreach ($numberData['types'] as $type) {
-                            $phoneStmt->bind_param("sssi", $phoneNumber, $type, $departmentHead, $departmentId);
-                            if (!$phoneStmt->execute()) throw new Exception("Failed to save phone number: " . $phoneStmt->error);
+                    if (isset($numberData['types']) && is_array($numberData['types'])) {
+                        // Combine types into description
+                        $description = implode(', ', $numberData['types']);
+                        
+                        $phoneStmt->bind_param("ssisi", $phoneNumber, $description, $headUserId, $headFullName, $departmentId);
+                        if (!$phoneStmt->execute()) {
+                            throw new Exception("Failed to save phone number: " . $phoneStmt->error);
                         }
                     }
                 }
@@ -185,7 +211,14 @@ ul.nav li a:hover { background-color:rgba(255,255,255,0.2); }
             </div>
             <div class="form-group">
                 <label for="head">Head of Department *</label>
-                <input type="text" name="head" id="head" required>
+                <select name="head" id="head" required>
+                    <option value="">Select Department Head</option>
+                    <?php foreach($headUsers as $user): ?>
+                        <option value="<?php echo $user['username']; ?>">
+                            <?php echo htmlspecialchars($user['full_name']) . ' (' . $user['username'] . ')'; ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="form-group">
                 <label for="under">Division handling this Department *</label>

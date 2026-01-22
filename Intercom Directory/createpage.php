@@ -2,18 +2,24 @@
 require_once 'conn.php';
 require_once 'config.php';
 updateAllUsersActivity($conn);
+
+$headUsersQuery = mysqli_query($conn, "SELECT user_id, username, full_name FROM users WHERE role_id IN (1, 3) ORDER BY username");
+$headUsers = [];
+while($user = mysqli_fetch_assoc($headUsersQuery)) {
+    $headUsers[] = $user;
+}
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $response = ['success' => false, 'message' => ''];
     
     try {
-        // Get division name
+        // Get division name and head username
         $divisionName = trim($_POST['name']);
-        $divisionhead = trim($_POST['head']);
+        $headUsername = trim($_POST['head']); // Assuming this is username
         
         // Validate division name
         if (empty($divisionName)) throw new Exception("Division name is required.");
-        if (empty($divisionhead)) throw new Exception("Division Head is required.");
+        if (empty($headUsername)) throw new Exception("Division Head is required.");
         
         // Check if division already exists
         $checkStmt = $conn->prepare("SELECT division_id FROM divisions WHERE division_name = ?");
@@ -22,6 +28,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $checkStmt->store_result();
         if ($checkStmt->num_rows > 0) throw new Exception("Division '$divisionName' already exists.");
         $checkStmt->close();
+        
+        // Get head user ID from username
+        $headQuery = $conn->prepare("SELECT user_id FROM users WHERE username = ?");
+        $headQuery->bind_param("s", $headUsername);
+        $headQuery->execute();
+        $headResult = $headQuery->get_result();
+        
+        if ($headResult->num_rows === 0) {
+            throw new Exception("Head user '$headUsername' not found in the system.");
+        }
+        
+        $headUser = $headResult->fetch_assoc();
+        $headUserId = $headUser['user_id'];
+        $headQuery->close();
         
         // Begin transaction
         $conn->begin_transaction();
@@ -35,14 +55,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Process phone numbers
         if (isset($_POST['numbers'])) {
-            $phoneStmt = $conn->prepare("INSERT INTO numbers (numbers, description, head, division_id) VALUES (?, ?, ?, ?)");
+            $phoneStmt = $conn->prepare("INSERT INTO numbers (numbers, description, head_user_id, head, division_id) VALUES (?, ?, ?, ?, ?)");
+            
             foreach ($_POST['numbers'] as $index => $numberData) {
                 $phoneNumber = trim($numberData['number']);
                 if (!empty($phoneNumber)) {
-                    if (isset($numberData['types'])) {
-                        foreach ($numberData['types'] as $type) {
-                            $phoneStmt->bind_param("issi",$phoneNumber, $type, $divisionhead, $divisionId);
-                            if (!$phoneStmt->execute()) throw new Exception("Failed to save phone number: " . $phoneStmt->error);
+                    // Check if types array exists
+                    if (isset($numberData['types']) && is_array($numberData['types'])) {
+                        // Combine types into description
+                        $description = implode(', ', $numberData['types']);
+                        
+                        $phoneStmt->bind_param("ssisi", $phoneNumber, $description, $headUserId, $headUsername, $divisionId);
+                        if (!$phoneStmt->execute()) {
+                            throw new Exception("Failed to save phone number: " . $phoneStmt->error);
                         }
                     }
                 }
@@ -56,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $response['division_id'] = $divisionId;
         
     } catch (Exception $e) {
-        $conn->rollback();
+        if ($conn) $conn->rollback();
         $response['message'] = $e->getMessage();
     }
     
@@ -221,7 +246,14 @@ ul.nav li a:hover { background-color:rgba(255,255,255,0.2); }
             </div>
             <div class="form-group">
                 <label for="head">Head of Division *</label>
-                <input type="text" name="head" id="head" required>
+                <select name="head" id="head" required>
+                    <option value="">Select Head User</option>
+                    <?php foreach($headUsers as $user): ?>
+                        <option value="<?php echo $user['username']; ?>">
+                            <?php echo htmlspecialchars($user['full_name']) . ' (' . $user['username'] . ')'; ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="form-group">
                 <label>Division Contact Numbers</label>

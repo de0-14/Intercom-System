@@ -20,13 +20,14 @@ $current_edit_message = null;
 $contact_query = "
     SELECT 
         n.*,
+        n.head,
         d.division_name,
         dept.department_name,
-        u.unit_name,
+        un.unit_name,
         o.office_name,
         d.status as division_status,
         dept.status as department_status,
-        u.status as unit_status,
+        un.status as unit_status,
         o.status as office_status,
         CASE 
             WHEN n.division_id IS NOT NULL THEN 'Division'
@@ -46,8 +47,8 @@ $contact_query = "
     LEFT JOIN divisions d ON n.division_id = d.division_id
     LEFT JOIN departments dept ON n.department_id = dept.department_id
     LEFT JOIN divisions d2 ON dept.division_id = d2.division_id
-    LEFT JOIN units u ON n.unit_id = u.unit_id
-    LEFT JOIN departments dept2 ON u.department_id = dept2.department_id
+    LEFT JOIN units un ON n.unit_id = un.unit_id
+    LEFT JOIN departments dept2 ON un.department_id = dept2.department_id
     LEFT JOIN divisions d3 ON dept2.division_id = d3.division_id
     LEFT JOIN offices o ON n.office_id = o.office_id
     LEFT JOIN units u2 ON o.unit_id = u2.unit_id

@@ -676,49 +676,74 @@ if ($result) {
     }
 }
 
-// Fetch all organizational units for dropdowns
-// Fix the SQL queries to use GROUP BY
-$divisions_result = $conn->query("SELECT dv.*, n.head FROM divisions dv LEFT JOIN numbers n ON dv.division_id = n.division_id GROUP BY dv.division_id ORDER BY division_name");
+// Fetch all organizational units for dropdowns - FIXED QUERIES
+$divisions_result = $conn->query("SELECT dv.* FROM divisions dv ORDER BY division_name");
 $divisions_list = $divisions_result->fetch_all(MYSQLI_ASSOC);
 
-$departments_result = $conn->query("SELECT 
-    d.*,
-    dv.division_name,
-    n.head
-    FROM departments d
-    LEFT JOIN divisions dv ON d.division_id = dv.division_id
-    LEFT JOIN numbers n ON d.department_id = n.department_id
-    GROUP BY d.department_id
-    ORDER BY d.department_name");
+// For divisions, get the most recent head from numbers
+foreach ($divisions_list as &$division) {
+    $head_stmt = $conn->prepare("SELECT head FROM numbers WHERE division_id = ? ORDER BY number_id DESC LIMIT 1");
+    $head_stmt->bind_param("i", $division['division_id']);
+    $head_stmt->execute();
+    $head_result = $head_stmt->get_result();
+    if ($head_row = $head_result->fetch_assoc()) {
+        $division['head'] = $head_row['head'];
+    } else {
+        $division['head'] = 'Not assigned';
+    }
+    $head_stmt->close();
+}
+
+$departments_result = $conn->query("SELECT d.*, dv.division_name FROM departments d LEFT JOIN divisions dv ON d.division_id = dv.division_id ORDER BY d.department_name");
 $departments_list = $departments_result->fetch_all(MYSQLI_ASSOC);
 
-$units_result = $conn->query("SELECT 
-    u.*,
-    d.department_name,
-    dv.division_name,
-    n.head
-    FROM units u
-    LEFT JOIN departments d ON u.department_id = d.department_id
-    LEFT JOIN divisions dv ON d.division_id = dv.division_id
-    LEFT JOIN numbers n ON u.unit_id = n.unit_id
-    GROUP BY u.unit_id
-    ORDER BY u.unit_name");
+// For departments, get the most recent head from numbers
+foreach ($departments_list as &$department) {
+    $head_stmt = $conn->prepare("SELECT head FROM numbers WHERE department_id = ? ORDER BY number_id DESC LIMIT 1");
+    $head_stmt->bind_param("i", $department['department_id']);
+    $head_stmt->execute();
+    $head_result = $head_stmt->get_result();
+    if ($head_row = $head_result->fetch_assoc()) {
+        $department['head'] = $head_row['head'];
+    } else {
+        $department['head'] = 'Not assigned';
+    }
+    $head_stmt->close();
+}
+
+$units_result = $conn->query("SELECT u.*, d.department_name, dv.division_name FROM units u LEFT JOIN departments d ON u.department_id = d.department_id LEFT JOIN divisions dv ON d.division_id = dv.division_id ORDER BY u.unit_name");
 $units_list = $units_result->fetch_all(MYSQLI_ASSOC);
 
-$offices_result = $conn->query("SELECT 
-    o.*,
-    u.unit_name,
-    d.department_name,
-    dv.division_name,
-    n.head
-    FROM offices o
-    LEFT JOIN units u ON o.unit_id = u.unit_id
-    LEFT JOIN departments d ON u.department_id = d.department_id
-    LEFT JOIN divisions dv ON d.division_id = dv.division_id
-    LEFT JOIN numbers n ON o.office_id = n.office_id
-    GROUP BY o.office_id
-    ORDER BY o.office_name");
+// For units, get the most recent head from numbers
+foreach ($units_list as &$unit) {
+    $head_stmt = $conn->prepare("SELECT head FROM numbers WHERE unit_id = ? ORDER BY number_id DESC LIMIT 1");
+    $head_stmt->bind_param("i", $unit['unit_id']);
+    $head_stmt->execute();
+    $head_result = $head_stmt->get_result();
+    if ($head_row = $head_result->fetch_assoc()) {
+        $unit['head'] = $head_row['head'];
+    } else {
+        $unit['head'] = 'Not assigned';
+    }
+    $head_stmt->close();
+}
+
+$offices_result = $conn->query("SELECT o.*, u.unit_name, d.department_name, dv.division_name FROM offices o LEFT JOIN units u ON o.unit_id = u.unit_id LEFT JOIN departments d ON u.department_id = d.department_id LEFT JOIN divisions dv ON d.division_id = dv.division_id ORDER BY o.office_name");
 $offices_list = $offices_result->fetch_all(MYSQLI_ASSOC);
+
+// For offices, get the most recent head from numbers
+foreach ($offices_list as &$office) {
+    $head_stmt = $conn->prepare("SELECT head FROM numbers WHERE office_id = ? ORDER BY number_id DESC LIMIT 1");
+    $head_stmt->bind_param("i", $office['office_id']);
+    $head_stmt->execute();
+    $head_result = $head_stmt->get_result();
+    if ($head_row = $head_result->fetch_assoc()) {
+        $office['head'] = $head_row['head'];
+    } else {
+        $office['head'] = 'Not assigned';
+    }
+    $head_stmt->close();
+}   
 
 // Fetch for dropdowns in forms
 $all_divisions = getDivisions($conn, false);
@@ -726,6 +751,11 @@ $all_departments = getDepartments($conn, false);
 $all_units = getUnits($conn, false);
 $offices_result2 = $conn->query("SELECT * FROM offices ORDER BY office_name");
 $offices = $offices_result2->fetch_all(MYSQLI_ASSOC);
+
+// Fetch all unique head names from numbers table for dropdown
+// Fetch all users' full names for dropdown
+$head_names_result = $conn->query("SELECT user_id, full_name FROM users WHERE status = 'active' ORDER BY full_name");
+$head_names = $head_names_result->fetch_all(MYSQLI_ASSOC);
 
 if (isset($_GET['success'])) {
     $success = urldecode($_GET['success']);
@@ -1250,6 +1280,7 @@ if (isset($_GET['success'])) {
         }
 
         /* --- TABLE COLUMN WIDTHS --- */
+        /* --- TABLE COLUMN WIDTHS --- */
         .contacts-table th:nth-child(1), 
         .contacts-table td:nth-child(1) {
             width: 15%;
@@ -1267,12 +1298,50 @@ if (isset($_GET['success'])) {
 
         .contacts-table th:nth-child(4), 
         .contacts-table td:nth-child(4) {
-            width: 35%;
+            width: 15%; /* Head column */
         }
 
         .contacts-table th:nth-child(5), 
         .contacts-table td:nth-child(5) {
-            width: 20%;
+            width: 25%; /* Organization column */
+        }
+
+        .contacts-table th:nth-child(6), 
+        .contacts-table td:nth-child(6) {
+            width: 25%; /* Actions column */
+        }
+        
+        /* --- DROPDOWN WITH INPUT --- */
+        .dropdown-with-input {
+            position: relative;
+            width: 100%;
+        }
+        
+        .dropdown-with-input select {
+            width: 100%;
+            padding-right: 40px;
+        }
+        
+        .dropdown-with-input .input-toggle {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .dropdown-with-input .input-toggle:hover {
+            background-color: #f0f0f0;
+        }
+        
+        .custom-input {
+            margin-top: 8px;
         }
     </style>
 </head>
@@ -1541,14 +1610,37 @@ if (isset($_GET['success'])) {
 
                     <div class="form-group">
                         <label for="division_head">Division Head</label>
-                        <input type="text" id="division_head" name="division_head" 
-                            value="<?php echo htmlspecialchars($current_org_item['head'] ?? ''); ?>" 
-                            placeholder="Enter division head name">
+                        <div class="dropdown-with-input">
+                            <select id="division_head" name="division_head" onchange="handleHeadSelection(this, 'division_custom_input')">
+                                <option value="">Select or enter new head</option>
+                                <?php 
+                                $current_head = $current_org_item['head'] ?? '';
+                                $has_existing_option = false;
+                                foreach ($head_names as $head): 
+                                    if ($head['head'] === $current_head) {
+                                        $has_existing_option = true;
+                                    }
+                                ?>
+                                    <option value="<?php echo htmlspecialchars($head['full_name']); ?>"
+                                        <?php echo $current_head === $head['full_name'] ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($head['full_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                                <option value="__custom__" <?php echo !$has_existing_option && !empty($current_head) ? 'selected' : ''; ?>>Enter custom name...</option>
+                            </select>
+                            <button type="button" class="input-toggle" onclick="toggleCustomInput('division_head', 'division_custom_input')">✏️</button>
+                        </div>
+                        <div id="division_custom_input" class="custom-input" style="<?php echo !$has_existing_option && !empty($current_head) ? 'display: block;' : 'display: none;' ?>">
+                            <input type="text" name="division_head_custom" placeholder="Enter division head name" 
+                                   value="<?php echo !$has_existing_option && !empty($current_head) ? htmlspecialchars($current_head) : ''; ?>" 
+                                   oninput="updateHeadSelect(this, 'division_head')">
+                            <small style="color: #666;">Enter a new head name</small>
+                        </div>
                     </div>
                     
                     <div class="form-group">
                         <label for="division_status">Status *</label>
-                        <select id="division_status" name="division_status" required>
+                        <select id="division_status" name="division_status" required onchange="showDecommissionWarning(this, 'division')">
                             <option value="active" <?php echo $current_org_item['status'] == 'active' ? 'selected' : ''; ?>>Active</option>
                             <option value="decommissioned" <?php echo $current_org_item['status'] == 'decommissioned' ? 'selected' : ''; ?>>Decommissioned</option>
                         </select>
@@ -1580,9 +1672,32 @@ if (isset($_GET['success'])) {
                     
                     <div class="form-group">
                         <label for="department_head">Department Head</label>
-                        <input type="text" id="department_head" name="department_head" 
-                            value="<?php echo htmlspecialchars($current_org_item['head'] ?? ''); ?>" 
-                            placeholder="Enter department head name">
+                        <div class="dropdown-with-input">
+                            <select id="department_head" name="department_head" onchange="handleHeadSelection(this, 'department_custom_input')">
+                                <option value="">Select or enter new head</option>
+                                <?php 
+                                $current_head = $current_org_item['head'] ?? '';
+                                $has_existing_option = false;
+                                foreach ($head_names as $head): 
+                                    if ($head['head'] === $current_head) {
+                                        $has_existing_option = true;
+                                    }
+                                ?>
+                                    <option value="<?php echo htmlspecialchars($head['head']); ?>"
+                                        <?php echo $current_head === $head['head'] ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($head['head']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                                <option value="__custom__" <?php echo !$has_existing_option && !empty($current_head) ? 'selected' : ''; ?>>Enter custom name...</option>
+                            </select>
+                            <button type="button" class="input-toggle" onclick="toggleCustomInput('department_head', 'department_custom_input')">✏️</button>
+                        </div>
+                        <div id="department_custom_input" class="custom-input" style="<?php echo !$has_existing_option && !empty($current_head) ? 'display: block;' : 'display: none;' ?>">
+                            <input type="text" name="department_head_custom" placeholder="Enter department head name" 
+                                   value="<?php echo !$has_existing_option && !empty($current_head) ? htmlspecialchars($current_head) : ''; ?>" 
+                                   oninput="updateHeadSelect(this, 'department_head')">
+                            <small style="color: #666;">Enter a new head name</small>
+                        </div>
                     </div>
                     
                     <div class="form-group">
@@ -1600,7 +1715,7 @@ if (isset($_GET['success'])) {
                     
                     <div class="form-group">
                         <label for="department_status">Status *</label>
-                        <select id="department_status" name="department_status" required>
+                        <select id="department_status" name="department_status" required onchange="showDecommissionWarning(this, 'department')">
                             <option value="active" <?php echo $current_org_item['status'] == 'active' ? 'selected' : ''; ?>>Active</option>
                             <option value="decommissioned" <?php echo $current_org_item['status'] == 'decommissioned' ? 'selected' : ''; ?>>Decommissioned</option>
                         </select>
@@ -1632,9 +1747,32 @@ if (isset($_GET['success'])) {
                     
                     <div class="form-group">
                         <label for="unit_head">Unit Head</label>
-                        <input type="text" id="unit_head" name="unit_head" 
-                            value="<?php echo htmlspecialchars($current_org_item['head'] ?? ''); ?>" 
-                            placeholder="Enter Unit head name">
+                        <div class="dropdown-with-input">
+                            <select id="unit_head" name="unit_head" onchange="handleHeadSelection(this, 'unit_custom_input')">
+                                <option value="">Select or enter new head</option>
+                                <?php 
+                                $current_head = $current_org_item['head'] ?? '';
+                                $has_existing_option = false;
+                                foreach ($head_names as $head): 
+                                    if ($head['head'] === $current_head) {
+                                        $has_existing_option = true;
+                                    }
+                                ?>
+                                    <option value="<?php echo htmlspecialchars($head['head']); ?>"
+                                        <?php echo $current_head === $head['head'] ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($head['head']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                                <option value="__custom__" <?php echo !$has_existing_option && !empty($current_head) ? 'selected' : ''; ?>>Enter custom name...</option>
+                            </select>
+                            <button type="button" class="input-toggle" onclick="toggleCustomInput('unit_head', 'unit_custom_input')">✏️</button>
+                        </div>
+                        <div id="unit_custom_input" class="custom-input" style="<?php echo !$has_existing_option && !empty($current_head) ? 'display: block;' : 'display: none;' ?>">
+                            <input type="text" name="unit_head_custom" placeholder="Enter unit head name" 
+                                   value="<?php echo !$has_existing_option && !empty($current_head) ? htmlspecialchars($current_head) : ''; ?>" 
+                                   oninput="updateHeadSelect(this, 'unit_head')">
+                            <small style="color: #666;">Enter a new head name</small>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -1652,7 +1790,7 @@ if (isset($_GET['success'])) {
                     
                     <div class="form-group">
                         <label for="unit_status">Status *</label>
-                        <select id="unit_status" name="unit_status" required>
+                        <select id="unit_status" name="unit_status" required onchange="showDecommissionWarning(this, 'unit')">
                             <option value="active" <?php echo $current_org_item['status'] == 'active' ? 'selected' : ''; ?>>Active</option>
                             <option value="decommissioned" <?php echo $current_org_item['status'] == 'decommissioned' ? 'selected' : ''; ?>>Decommissioned</option>
                         </select>
@@ -1684,9 +1822,32 @@ if (isset($_GET['success'])) {
                     
                     <div class="form-group">
                         <label for="office_head">Office Head</label>
-                        <input type="text" id="office_head" name="office_head" 
-                            value="<?php echo htmlspecialchars($current_org_item['head'] ?? ''); ?>" 
-                            placeholder="Enter Office head name">
+                        <div class="dropdown-with-input">
+                            <select id="office_head" name="office_head" onchange="handleHeadSelection(this, 'office_custom_input')">
+                                <option value="">Select or enter new head</option>
+                                <?php 
+                                $current_head = $current_org_item['head'] ?? '';
+                                $has_existing_option = false;
+                                foreach ($head_names as $head): 
+                                    if ($head['head'] === $current_head) {
+                                        $has_existing_option = true;
+                                    }
+                                ?>
+                                    <option value="<?php echo htmlspecialchars($head['head']); ?>"
+                                        <?php echo $current_head === $head['head'] ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($head['head']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                                <option value="__custom__" <?php echo !$has_existing_option && !empty($current_head) ? 'selected' : ''; ?>>Enter custom name...</option>
+                            </select>
+                            <button type="button" class="input-toggle" onclick="toggleCustomInput('office_head', 'office_custom_input')">✏️</button>
+                        </div>
+                        <div id="office_custom_input" class="custom-input" style="<?php echo !$has_existing_option && !empty($current_head) ? 'display: block;' : 'display: none;' ?>">
+                            <input type="text" name="office_head_custom" placeholder="Enter office head name" 
+                                   value="<?php echo !$has_existing_option && !empty($current_head) ? htmlspecialchars($current_head) : ''; ?>" 
+                                   oninput="updateHeadSelect(this, 'office_head')">
+                            <small style="color: #666;">Enter a new head name</small>
+                        </div>
                     </div>
                     
                     <div class="form-group">
@@ -1704,7 +1865,7 @@ if (isset($_GET['success'])) {
                     
                     <div class="form-group">
                         <label for="office_status">Status *</label>
-                        <select id="office_status" name="office_status" required>
+                        <select id="office_status" name="office_status" required onchange="showDecommissionWarning(this, 'office')">
                             <option value="active" <?php echo $current_org_item['status'] == 'active' ? 'selected' : ''; ?>>Active</option>
                             <option value="decommissioned" <?php echo $current_org_item['status'] == 'decommissioned' ? 'selected' : ''; ?>>Decommissioned</option>
                         </select>
@@ -1738,11 +1899,14 @@ if (isset($_GET['success'])) {
                     <table class="contacts-table" id="contactsTable">
                         <thead>
                             <tr>
+                                <tr>
                                 <th>Contact Number</th>
                                 <th>Description</th>
                                 <th>Status</th>
-                                <th>Head & Organization</th> <!-- Changed from separate columns -->
+                                <th>Head</th> <!-- Separate Head column -->
+                                <th>Organization</th> <!-- Separate Organization column -->
                                 <th>Actions</th>
+                            </tr>
                             </tr>
                         </thead>
                         <tbody>
@@ -1779,33 +1943,27 @@ if (isset($_GET['success'])) {
                             ?>
                                 <tr>
                                     <td><?php echo htmlspecialchars($number['numbers']); ?></td>
-                                        <td><?php echo htmlspecialchars($number['description']); ?></td>
-                                        <td>
-                                            <span class="status-badge <?php echo $statusClass; ?>">
-                                                <?php echo $statusText; ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <!-- Combined Head and Organization -->
-                                            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start;">
-                                                <!-- Head -->
-                                                <div style="font-weight: 600; color: #2d3748;">
-                                                    <?php echo htmlspecialchars($number['head']); ?>
-                                                </div>
-                                                
-                                                <!-- Organization -->
-                                                <div style="font-weight: 600; color: #2d3748;">
-                                                    <?php if ($org_type && $org_name): ?>
-                                                        <div style="display: flex; align-items: center; gap: 6px;">
-                                                            <span class="org-badge"><?php echo $org_type; ?></span>
-                                                            <?php echo htmlspecialchars($org_name); ?>
-                                                        </div>
-                                                    <?php else: ?>
-                                                        <em style="color: #999; font-size: 14px;">Not assigned</em>
-                                                    <?php endif; ?>
-                                                </div>
+                                    <td><?php echo htmlspecialchars($number['description']); ?></td>
+                                    <td>
+                                        <span class="status-badge <?php echo $statusClass; ?>">
+                                            <?php echo $statusText; ?>
+                                        </span>
+                                    </td>
+                                    <!-- Head Column (separate from Organization) -->
+                                    <td style="font-weight: 600; color: #2d3748;">
+                                        <?php echo htmlspecialchars($number['head']); ?>
+                                    </td>
+                                    <!-- Organization Column (separate from Head) -->
+                                    <td>
+                                        <?php if ($org_type && $org_name): ?>
+                                            <div style="display: flex; align-items: center; gap: 6px;">
+                                                <span class="org-badge"><?php echo $org_type; ?></span>
+                                                <?php echo htmlspecialchars($org_name); ?>
                                             </div>
-                                        </td>
+                                        <?php else: ?>
+                                            <em style="color: #999; font-size: 14px;">Not assigned</em>
+                                        <?php endif; ?>
+                                    </td>
                                     <td>
                                         <div class="action-buttons">
                                             <a href="?section=contacts&edit=<?php echo $number['number_id']; ?>" class="edit-btn">Edit</a>
@@ -2117,6 +2275,70 @@ if (isset($_GET['success'])) {
         }
     }
     
+    function handleHeadSelection(select, customInputId) {
+        const customInputDiv = document.getElementById(customInputId);
+        if (select.value === '__custom__') {
+            customInputDiv.style.display = 'block';
+            const customInput = customInputDiv.querySelector('input[type="text"]');
+            if (customInput) {
+                customInput.focus();
+            }
+        } else {
+            customInputDiv.style.display = 'none';
+        }
+    }
+    
+    function toggleCustomInput(selectId, customInputId) {
+        const select = document.getElementById(selectId);
+        const customInputDiv = document.getElementById(customInputId);
+        const customInput = customInputDiv.querySelector('input[type="text"]');
+        
+        if (customInputDiv.style.display === 'none') {
+            // Show custom input and select the custom option
+            select.value = '__custom__';
+            customInputDiv.style.display = 'block';
+            if (customInput) {
+                customInput.focus();
+            }
+        } else {
+            // Hide custom input and reset to empty
+            customInputDiv.style.display = 'none';
+            select.value = '';
+        }
+    }
+    
+    function updateHeadSelect(input, selectId) {
+        const select = document.getElementById(selectId);
+        // Update the custom option text to show the current input
+        const customOption = select.querySelector('option[value="__custom__"]');
+        if (customOption) {
+            customOption.textContent = input.value ? `Custom: ${input.value}` : 'Enter custom name...';
+        }
+        // Ensure the custom option is selected
+        if (select.value !== '__custom__') {
+            select.value = '__custom__';
+        }
+    }
+    
+    function showDecommissionWarning(select, orgType) {
+        const warningDiv = document.getElementById('decommissionWarning');
+        if (select.value === 'decommissioned') {
+            warningDiv.style.display = 'block';
+            // Customize message based on org type
+            if (orgType === 'division') {
+                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this division will also decommission all departments, units, offices, and their contact numbers under it.';
+            } else if (orgType === 'department') {
+                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this department will also decommission all units, offices, and their contact numbers under it.';
+            } else if (orgType === 'unit') {
+                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this unit will also decommission all offices and their contact numbers under it.';
+            } else if (orgType === 'office') {
+                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this office will also decommission all contact numbers under it.';
+            }
+        } else {
+            warningDiv.style.display = 'none';
+        }
+    }
+    
     document.addEventListener('DOMContentLoaded', function() {
         const divisionSelect = document.getElementById('new_division_id');
         const departmentSelect = document.getElementById('new_department_id');
@@ -2138,26 +2360,24 @@ if (isset($_GET['success'])) {
             if (unitSelect) unitSelect.addEventListener('change', function() { if (this.value) clearOtherSelections(this); });
             if (officeSelect) officeSelect.addEventListener('change', function() { if (this.value) clearOtherSelections(this); });
         }
+        
+        // Handle form submission for custom head names
+        const forms = document.querySelectorAll('form');
+        forms.forEach(form => {
+            form.addEventListener('submit', function(e) {
+                // Check if there are custom head inputs
+                const customInputs = form.querySelectorAll('input[name$="_custom"]');
+                customInputs.forEach(input => {
+                    const selectName = input.name.replace('_custom', '');
+                    const select = form.querySelector(`select[name="${selectName}"]`);
+                    if (select && select.value === '__custom__' && input.value.trim()) {
+                        // Update the select's value to the custom input
+                        select.value = input.value.trim();
+                    }
+                });
+            });
+        });
     });
-
-    function showDecommissionWarning(select, orgType) {
-        const warningDiv = document.getElementById('decommissionWarning');
-        if (select.value === 'decommissioned') {
-            warningDiv.style.display = 'block';
-            // Customize message based on org type
-            if (orgType === 'division') {
-                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this division will also decommission all departments, units, offices, and their contact numbers under it.';
-            } else if (orgType === 'department') {
-                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this department will also decommission all units, offices, and their contact numbers under it.';
-            } else if (orgType === 'unit') {
-                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this unit will also decommission all offices and their contact numbers under it.';
-            } else if (orgType === 'office') {
-                warningDiv.innerHTML = '<strong>Warning:</strong> Decommissioning this office will also decommission all contact numbers under it.';
-            }
-        } else {
-            warningDiv.style.display = 'none';
-        }
-    }
 </script>
 </body>
 </html>

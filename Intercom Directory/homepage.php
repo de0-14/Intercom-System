@@ -8,7 +8,6 @@ function getAllContactNumbers($conn) {
             n.number_id,
             n.numbers as contact_number,
             n.description,
-            n.head,
             COALESCE(
                 d.division_name,
                 dept.department_name,
@@ -852,58 +851,71 @@ ul.nav li a:hover {
 
 <script>
 let currentSort = 'default';
-let originalRows = []; // Store original row order
+let originalRows = [];
+let currentFilter = 'all';
 
 function filterSearch(){
-    const input=document.getElementById('searchInput').value.toLowerCase();
-    document.querySelectorAll('.contact-row').forEach(row=>{
-        let match=false;
-        row.querySelectorAll('td').forEach(td=>{
-            if(td.innerText.toLowerCase().includes(input)) match=true;
+    const input = document.getElementById('searchInput').value.toLowerCase();
+    const rows = document.querySelectorAll('.contact-row');
+    
+    rows.forEach(row => {
+        let match = false;
+        const cells = row.querySelectorAll('td');
+        
+        cells.forEach(td => {
+            if(td.innerText.toLowerCase().includes(input)) match = true;
         });
-        row.style.display=match?'':'none';
+        
+        // Only hide/show if it passes the current filter too
+        if (match && passesCurrentFilter(row)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
     });
 }
 
-function filterTable(type){
-    const rows=document.querySelectorAll('.contact-row');
-    const buttons=document.querySelectorAll('.filter-btn');
+function passesCurrentFilter(row) {
+    const rowType = row.getAttribute('data-type');
+    const rowStatus = row.getAttribute('data-status');
     
-    // Reset all buttons and activate the clicked one
-    buttons.forEach(btn=>{
-        btn.classList.remove('active');
-        // Check if this button's onclick contains the type we're looking for
+    if (currentFilter === 'all') return true;
+    if (currentFilter === 'active' || currentFilter === 'decommissioned') {
+        return rowStatus === currentFilter;
+    }
+    return rowType === currentFilter;
+}
+
+function filterTable(type){
+    currentFilter = type;
+    const buttons = document.querySelectorAll('.filter-btn');
+    
+    // Reset and activate correct button
+    buttons.forEach(btn => btn.classList.remove('active'));
+    buttons.forEach(btn => {
         if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes("'" + type + "'")) {
             btn.classList.add('active');
         }
     });
 
-    rows.forEach(row=>{
-        let show=false;
-        const rowType=row.getAttribute('data-type');
-        const rowStatus=row.getAttribute('data-status');
-        
-        if(type==='all') {
-            show=true;
-        } else if(type==='active'||type==='decommissioned') {
-            show=rowStatus===type;
+    // Filter rows
+    const rows = document.querySelectorAll('.contact-row');
+    rows.forEach(row => {
+        if (passesCurrentFilter(row)) {
+            row.style.display = '';
         } else {
-            // For type filters (division, department, unit, office)
-            show=rowType===type;
+            row.style.display = 'none';
         }
-        
-        row.style.display=show?'':'none';
     });
     
-    // Apply current sort after filtering
+    // Apply current sort
     applySort(currentSort);
 }
 
 function sortTable(sortType){
     const sortButtons = document.querySelectorAll('.sort-btn');
-    sortButtons.forEach(btn=>btn.classList.remove('active'));
+    sortButtons.forEach(btn => btn.classList.remove('active'));
     
-    // Find and activate the clicked sort button
     sortButtons.forEach(btn => {
         if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes("'" + sortType + "'")) {
             btn.classList.add('active');
@@ -918,95 +930,69 @@ function applySort(sortType){
     const tbody = document.getElementById('contacts-tbody');
     const visibleRows = Array.from(tbody.querySelectorAll('.contact-row:not([style*="display: none"])'));
     
-    // If switching back to default, restore original order
     if (sortType === 'default') {
-        restoreOriginalOrder();
+        // For default sort, we need to restore original order
+        // But only for visible rows
+        const allRows = Array.from(tbody.querySelectorAll('.contact-row'));
+        
+        // Create a map of row positions in original order
+        const positionMap = new Map();
+        originalRows.forEach((row, index) => {
+            const id = row.getAttribute('data-id');
+            if (id) positionMap.set(id, index);
+        });
+        
+        // Sort visible rows by their original position
+        visibleRows.sort((a, b) => {
+            const idA = a.getAttribute('data-id');
+            const idB = b.getAttribute('data-id');
+            const posA = positionMap.get(idA) || 0;
+            const posB = positionMap.get(idB) || 0;
+            return posA - posB;
+        });
+        
+        // Reorder in DOM
+        visibleRows.forEach(row => tbody.appendChild(row));
         return;
     }
     
-    // Sort visible rows
+    // For other sorts
     visibleRows.sort((a, b) => {
         switch(sortType){
             case 'rating':
                 const ratingA = parseFloat(a.getAttribute('data-rating'));
                 const ratingB = parseFloat(b.getAttribute('data-rating'));
-                return ratingB - ratingA; // Descending order
-                
+                return ratingB - ratingA;
             default:
                 return 0;
         }
     });
     
-    // Reorder visible rows in the DOM
     visibleRows.forEach(row => tbody.appendChild(row));
 }
 
-function restoreOriginalOrder() {
-    const tbody = document.getElementById('contacts-tbody');
-    
-    // Clear the tbody
-    tbody.innerHTML = '';
-    
-    // Add all rows back in their original order
-    originalRows.forEach(row => {
-        // Only add if the row is not hidden by filtering
-        if (row.style.display !== 'none') {
-            tbody.appendChild(row.cloneNode(true));
-        }
-    });
-}
-
 document.addEventListener('DOMContentLoaded', function() {
-    // Store original row order on page load
+    // Store original rows with their data-id
     const tbody = document.getElementById('contacts-tbody');
-    originalRows = Array.from(tbody.querySelectorAll('.contact-row')).map(row => row.cloneNode(true));
+    originalRows = Array.from(tbody.querySelectorAll('.contact-row'));
     
+    // Add click event listeners
     const rows = document.querySelectorAll('.clickable-row');
-    
     rows.forEach(row => {
         row.addEventListener('click', function() {
             const contactId = this.getAttribute('data-id');
             window.location.href = `numpage.php?id=${contactId}`;
         });
     });
-});
-// Admin online button interaction
-document.addEventListener('DOMContentLoaded', function() {
-    const adminBtn = document.getElementById('adminOnlineBtn');
-    const adminDropdown = document.getElementById('adminDropdown');
     
-    if (adminBtn && adminDropdown) {
-        // Toggle dropdown on click
-        adminBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            adminDropdown.classList.toggle('show');
-        });
-        
-        // Close dropdown when clicking outside
-        document.addEventListener('click', function(e) {
-            if (!adminBtn.contains(e.target) && !adminDropdown.contains(e.target)) {
-                adminDropdown.classList.remove('show');
-            }
-        });
-        
-        // Update admin count periodically (every 30 seconds)
-        setInterval(function() {
-            fetch('get_online_admins.php')
-                .then(response => response.json())
-                .then(data => {
-                    const adminCount = document.querySelector('.admin-count');
-                    const dropdownCount = adminDropdown.querySelector('h4');
-                    
-                    if (adminCount && data.count !== undefined) {
-                        adminCount.textContent = data.count;
-                    }
-                    if (dropdownCount && data.count !== undefined) {
-                        dropdownCount.textContent = `Currently Online (${data.count})`;
-                    }
-                })
-                .catch(error => console.error('Error updating admin count:', error));
-        }, 30000); // 30 seconds
-    }
+    // Event delegation for dynamically reordered rows
+    tbody.addEventListener('click', function(e) {
+        const row = e.target.closest('.clickable-row');
+        if (row) {
+            const contactId = row.getAttribute('data-id');
+            window.location.href = `numpage.php?id=${contactId}`;
+        }
+    });
 });
 </script>
 

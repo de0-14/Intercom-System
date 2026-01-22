@@ -2,47 +2,80 @@
 require_once 'conn.php';
 require_once 'config.php';
 updateAllUsersActivity($conn);
+
+// Get users who can be office heads (Admins, Unit Heads, or Office Heads)
+$headUsersQuery = mysqli_query($conn, "SELECT user_id, username, full_name FROM users WHERE role_id IN (1, 5, 6) ORDER BY username");
+$headUsers = [];
+while($user = mysqli_fetch_assoc($headUsersQuery)) {
+    $headUsers[] = $user;
+}
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $response = ['success' => false, 'message' => ''];
 
     try {
         $officeName = trim($_POST['name']);
-        $officeHead = trim($_POST['head']);
-        $underUnit = trim($_POST['under']); 
+        $headUsername = trim($_POST['head']); // This should be username
+        $underUnit = (int)$_POST['under'];
 
         if (empty($officeName)) throw new Exception("Office name is required.");
-        if (empty($officeHead)) throw new Exception("Office Head is required.");
+        if (empty($headUsername)) throw new Exception("Office Head is required.");
         if (empty($underUnit)) throw new Exception("Please select a Unit.");
 
-        $checkStmt = $conn->prepare("SELECT office_id FROM offices WHERE office_name = ?");
-        $checkStmt->bind_param("s", $officeName);
+        // Check if office already exists under this unit
+        $checkStmt = $conn->prepare("SELECT office_id FROM offices WHERE office_name = ? AND unit_id = ?");
+        $checkStmt->bind_param("si", $officeName, $underUnit);
         $checkStmt->execute();
         $checkStmt->store_result();
-        if ($checkStmt->num_rows > 0) throw new Exception("Office '$officeName' already exists.");
+        if ($checkStmt->num_rows > 0) throw new Exception("Office '$officeName' already exists in this unit.");
         $checkStmt->close();
+
+        // Get head user ID from username
+        $headQuery = $conn->prepare("SELECT user_id, full_name FROM users WHERE username = ?");
+        $headQuery->bind_param("s", $headUsername);
+        $headQuery->execute();
+        $headResult = $headQuery->get_result();
+        
+        if ($headResult->num_rows === 0) {
+            throw new Exception("Head user '$headUsername' not found in the system.");
+        }
+        
+        $headUser = $headResult->fetch_assoc();
+        $headUserId = $headUser['user_id'];
+        $headFullName = $headUser['full_name'];
+        $headQuery->close();
 
         $conn->begin_transaction();
 
+        // Insert office
         $stmt = $conn->prepare("INSERT INTO offices (office_name, unit_id, status) VALUES (?, ?, 'active')");
         $stmt->bind_param("si", $officeName, $underUnit);
         if (!$stmt->execute()) throw new Exception("Failed to create office: " . $stmt->error);
         $officeId = $conn->insert_id;
         $stmt->close();
 
+        // Process contact numbers
         if (isset($_POST['numbers'])) {
-            $phoneStmt = $conn->prepare("INSERT INTO numbers (numbers, description, head, office_id) VALUES (?, ?, ?, ?)");
+            $phoneStmt = $conn->prepare("INSERT INTO numbers (numbers, description, head_user_id, head, office_id) VALUES (?, ?, ?, ?, ?)");
+            
             foreach ($_POST['numbers'] as $index => $numberData) {
                 $phoneNumber = trim($numberData['number']);
                 if (!empty($phoneNumber)) {
-                    if (isset($numberData['types'])) {
-                        foreach ($numberData['types'] as $type) {
-                            $phoneStmt->bind_param("sssi", $phoneNumber, $type, $officeHead, $officeId);
-                            if (!$phoneStmt->execute()) throw new Exception("Failed to save phone number: " . $phoneStmt->error);
+                    if (isset($numberData['types']) && is_array($numberData['types'])) {
+                        // Combine types into description
+                        $description = implode(', ', $numberData['types']);
+                        
+                        $phoneStmt->bind_param("ssisi", $phoneNumber, $description, $headUserId, $headFullName, $officeId);
+                        if (!$phoneStmt->execute()) {
+                            throw new Exception("Failed to save phone number: " . $phoneStmt->error);
                         }
                     } else {
-                        $phoneStmt->bind_param("sssi", $phoneNumber, 'General', $officeHead, $officeId);
-                        if (!$phoneStmt->execute()) throw new Exception("Failed to save phone number: " . $phoneStmt->error);
+                        // If no types selected, use 'General'
+                        $phoneStmt->bind_param("ssisi", $phoneNumber, 'General', $headUserId, $headFullName, $officeId);
+                        if (!$phoneStmt->execute()) {
+                            throw new Exception("Failed to save phone number: " . $phoneStmt->error);
+                        }
                     }
                 }
             }
@@ -184,7 +217,14 @@ ul.nav li a:hover { background-color:rgba(255,255,255,0.2); }
             </div>
             <div class="form-group">
                 <label for="head">Head of Office *</label>
-                <input type="text" name="head" id="head" required>
+                <select name="head" id="head" required>
+                    <option value="">Select Office Head</option>
+                    <?php foreach($headUsers as $user): ?>
+                        <option value="<?php echo $user['username']; ?>">
+                            <?php echo htmlspecialchars($user['full_name']) . ' (' . $user['username'] . ')'; ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="form-group">
                 <label for="under">Unit handling this Office *</label>
