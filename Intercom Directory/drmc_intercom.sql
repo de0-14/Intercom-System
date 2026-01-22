@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 22, 2026 at 05:28 AM
+-- Generation Time: Jan 22, 2026 at 09:26 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -50,8 +50,9 @@ CREATE TABLE `conversations` (
 
 INSERT INTO `conversations` (`conversation_id`, `number_id`, `initiated_by`, `created_at`) VALUES
 (1, 2, 4, '2026-01-22 04:25:53'),
-(2, 2, 4, '2026-01-22 04:26:14'),
-(3, 2, 4, '2026-01-22 04:26:30');
+(4, 5, 2, '2026-01-22 07:25:27'),
+(5, 5, 4, '2026-01-22 07:26:25'),
+(6, 2, 2, '2026-01-22 08:09:30');
 
 -- --------------------------------------------------------
 
@@ -125,16 +126,13 @@ INSERT INTO `feedback` (`feedback_id`, `number_id`, `user_id`, `rating`, `commen
 CREATE TABLE `messages` (
   `message_id` int(11) NOT NULL,
   `sender_id` int(11) NOT NULL,
-  `receiver_id` int(11) DEFAULT NULL,
-  `receiver_head` varchar(255) DEFAULT NULL,
+  `receiver_id` int(11) NOT NULL,
   `number_id` int(11) NOT NULL,
   `conversation_id` int(11) DEFAULT NULL,
   `message` text NOT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `is_read` tinyint(1) DEFAULT 0,
-  `parent_message_id` int(11) DEFAULT NULL,
-  `chat_thread` varchar(50) DEFAULT NULL,
   `is_head_reply` tinyint(1) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -142,10 +140,13 @@ CREATE TABLE `messages` (
 -- Dumping data for table `messages`
 --
 
-INSERT INTO `messages` (`message_id`, `sender_id`, `receiver_id`, `receiver_head`, `number_id`, `conversation_id`, `message`, `created_at`, `updated_at`, `is_read`, `parent_message_id`, `chat_thread`, `is_head_reply`) VALUES
-(1, 4, NULL, NULL, 2, 1, 'ts nice cuh', '2026-01-22 12:25:54', '2026-01-22 12:25:54', 0, NULL, NULL, 0),
-(2, 4, NULL, NULL, 2, 2, 'nicenice', '2026-01-22 12:26:14', '2026-01-22 12:26:14', 0, NULL, NULL, 0),
-(3, 4, NULL, NULL, 2, 3, 'cuh', '2026-01-22 12:26:30', '2026-01-22 12:26:30', 0, NULL, NULL, 0);
+INSERT INTO `messages` (`message_id`, `sender_id`, `receiver_id`, `number_id`, `conversation_id`, `message`, `created_at`, `updated_at`, `is_read`, `is_head_reply`) VALUES
+(24, 4, 2, 5, 5, 'WASSSUPPPP', '2026-01-22 15:26:26', '2026-01-22 15:26:26', 0, 0),
+(25, 2, 4, 5, 5, 'WASSSUPPPPPPPPP', '2026-01-22 15:27:01', '2026-01-22 15:27:01', 0, 1),
+(26, 4, 3, 2, 1, 'HELLO', '2026-01-22 16:00:08', '2026-01-22 16:00:08', 0, 0),
+(27, 3, 4, 2, 1, 'sdasdwa', '2026-01-22 16:00:24', '2026-01-22 16:00:24', 0, 1),
+(28, 4, 3, 2, 1, 'sadsafeaadsf', '2026-01-22 16:00:40', '2026-01-22 16:00:40', 0, 0),
+(29, 2, 3, 2, 6, 'musta?', '2026-01-22 16:09:30', '2026-01-22 16:09:30', 0, 0);
 
 -- --------------------------------------------------------
 
@@ -171,10 +172,11 @@ CREATE TABLE `numbers` (
 --
 
 INSERT INTO `numbers` (`numbers`, `description`, `head_user_id`, `head`, `division_id`, `department_id`, `unit_id`, `office_id`, `number_id`, `status`) VALUES
-('1234', 'Landline', 2, 'dev', 2, NULL, NULL, NULL, 2, 'active'),
+('1234', 'Landline', 3, 'dev', 2, NULL, NULL, NULL, 2, 'active'),
 ('69420', 'Intercom', 2, 'JDLT', NULL, 2, NULL, NULL, 4, 'active'),
 ('9999', 'SMS', 2, 'JDLT', NULL, NULL, 1, NULL, 5, 'active'),
-('5643', 'Landline', 2, 'JDLT', NULL, NULL, NULL, 1, 6, 'active');
+('5643', 'Landline', 2, 'JDLT', NULL, NULL, NULL, 1, 6, 'active'),
+('5555', 'Test', 3, 'dev', 2, NULL, NULL, NULL, 7, 'active');
 
 -- --------------------------------------------------------
 
@@ -266,9 +268,9 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password`, `email`, `full_name`, `role_id`, `division_id`, `department_id`, `unit_id`, `office_id`, `status`, `last_activity`) VALUES
-(2, 'admin', '$2y$10$1cl.dBem3urTDopqun8h5eGJkcdXYYyjG/onkmQLn5E.s7YwqohC.', 'dalvyx123@gmail.com', 'JDLT', 1, NULL, NULL, NULL, NULL, 'active', 1769055867),
-(3, 'dev', '$2y$10$zWN7BcpCrAWGZ.89Icx/H.251E/Lzr948O5j.TEGkrRKsIW.o5hr6', 'dev@gmail.com', 'dev', 3, 2, NULL, NULL, NULL, 'active', 1769056037),
-(4, 'JD', '$2y$10$7O8nslOzqvV4c/Rz4rB0duzm0utvTIPIMTDhcJdGjyjw6INA7739W', 'joseph@gmail.com', 'Joseph Talattag', 7, 2, 2, 1, 1, 'active', 1769055922);
+(2, 'admin', '$2y$10$1cl.dBem3urTDopqun8h5eGJkcdXYYyjG/onkmQLn5E.s7YwqohC.', 'dalvyx123@gmail.com', 'JDLT', 1, NULL, NULL, NULL, NULL, 'active', 1769070309),
+(3, 'dev', '$2y$10$zWN7BcpCrAWGZ.89Icx/H.251E/Lzr948O5j.TEGkrRKsIW.o5hr6', 'dev@gmail.com', 'dev', 3, 2, NULL, NULL, NULL, 'active', 1769069389),
+(4, 'JD', '$2y$10$7O8nslOzqvV4c/Rz4rB0duzm0utvTIPIMTDhcJdGjyjw6INA7739W', 'joseph@gmail.com', 'Joseph Talattag', 7, 2, 2, 1, 1, 'active', 1769069179);
 
 -- --------------------------------------------------------
 
@@ -321,9 +323,6 @@ ALTER TABLE `feedback`
 ALTER TABLE `messages`
   ADD PRIMARY KEY (`message_id`),
   ADD KEY `number_id` (`number_id`),
-  ADD KEY `idx_receiver_head` (`receiver_head`),
-  ADD KEY `idx_chat_thread` (`chat_thread`),
-  ADD KEY `idx_parent_message` (`parent_message_id`),
   ADD KEY `idx_sender_receiver` (`sender_id`,`receiver_id`),
   ADD KEY `receiver_id` (`receiver_id`),
   ADD KEY `fk_messages_conversation_id` (`conversation_id`);
@@ -386,7 +385,7 @@ ALTER TABLE `user_online_status`
 -- AUTO_INCREMENT for table `conversations`
 --
 ALTER TABLE `conversations`
-  MODIFY `conversation_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `conversation_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `departments`
@@ -410,13 +409,13 @@ ALTER TABLE `feedback`
 -- AUTO_INCREMENT for table `messages`
 --
 ALTER TABLE `messages`
-  MODIFY `message_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `message_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=30;
 
 --
 -- AUTO_INCREMENT for table `numbers`
 --
 ALTER TABLE `numbers`
-  MODIFY `number_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `number_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `offices`
