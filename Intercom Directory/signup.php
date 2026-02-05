@@ -6,11 +6,18 @@ $success = "";
 
 $username = $email = $fullname = '';
 
+// Fetch divisions for dropdown
+$divisions = getDivisions($conn);
+
 if($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username']);
     $email = trim($_POST['email']);
     $fullname = trim($_POST['fn']);
     $password = $_POST['password'];
+    $division_id = !empty($_POST['division_id']) ? (int)$_POST['division_id'] : NULL;
+    $department_id = !empty($_POST['department_id']) ? (int)$_POST['department_id'] : NULL;
+    $unit_id = !empty($_POST['unit_id']) ? (int)$_POST['unit_id'] : NULL;
+    $office_id = !empty($_POST['office_id']) ? (int)$_POST['office_id'] : NULL;
 
     // Validate email
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -39,16 +46,50 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
         if(mysqli_stmt_num_rows($stmt) > 0) {
             $error = "Username or Email already exists!";
         } else {
-            $password_hash = password_hash($password, PASSWORD_DEFAULT);
-            $insert_sql = "INSERT INTO users (username,email,full_name,password,role_id) VALUES (?,?,?,?,7)";
-            $stmt2 = mysqli_prepare($conn, $insert_sql);
-            mysqli_stmt_bind_param($stmt2, "ssss", $username, $email, $fullname, $password_hash);
-            mysqli_stmt_execute($stmt2);
-            $success = "Account created successfully!";
-            header("refresh:5;url=login.php");
+            // Validate organizational hierarchy
+            $valid_hierarchy = true;
+            $hierarchy_error = "";
+            
+            if ($office_id && !$unit_id) {
+                $valid_hierarchy = false;
+                $hierarchy_error = "Unit must be selected when Office is selected.";
+            }
+            if ($unit_id && !$department_id) {
+                $valid_hierarchy = false;
+                $hierarchy_error = "Department must be selected when Unit is selected.";
+            }
+            if ($department_id && !$division_id) {
+                $valid_hierarchy = false;
+                $hierarchy_error = "Division must be selected when Department is selected.";
+            }
+            
+            if (!$valid_hierarchy) {
+                $error = $hierarchy_error;
+            } else {
+                $password_hash = password_hash($password, PASSWORD_DEFAULT);
+                
+                // Insert user with organizational data
+                $insert_sql = "INSERT INTO users (username, email, full_name, password, role_id, division_id, department_id, unit_id, office_id, status) 
+                               VALUES (?, ?, ?, ?, 7, ?, ?, ?, ?, 'active')";
+                $stmt2 = mysqli_prepare($conn, $insert_sql);
+                mysqli_stmt_bind_param($stmt2, "ssssiiii", $username, $email, $fullname, $password_hash, $division_id, $department_id, $unit_id, $office_id);
+                
+                if(mysqli_stmt_execute($stmt2)) {
+                    $success = "Account created successfully!";
+                    // Reset form fields
+                    $username = $email = $fullname = '';
+                    // Don't use header redirect here, use JavaScript instead
+                    $redirect = true;
+                } else {
+                    $error = "Error creating account: " . mysqli_error($conn);
+                }
+                mysqli_stmt_close($stmt2);
+            }
         }
+        mysqli_stmt_close($stmt);
     }
 }
+
 ?>
 
 <!DOCTYPE html>
@@ -200,6 +241,26 @@ button.submit-btn {
     cursor: pointer;
     transition: all 0.3s ease;
 }
+label {
+    display: block;
+    margin-top: 12px;
+    margin-bottom: 5px;
+    color: #333;
+}
+
+input, select {
+    width: 100%;
+    padding: 11px 12px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+    border: 1px solid #ccd6e3;
+    font-size: 14px;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: #2b6cb0;
+}
 
 button.submit-btn:hover {
     background-color: #1f4f8b;
@@ -254,66 +315,100 @@ a {
 </style>
 </head>
 <body>
-
-<!-- HEADER -->
-<div class="header">
-    <div class="logo">
-        <img src="hospitalLogo.png" alt="Hospital Logo">
-        <span>DAVAO REGIONAL MEDICAL CENTER</span>
+    <div class="header">
+        <div class="logo">
+            <img src="hospitalLogo.png" alt="Hospital Logo">
+            <span>DAVAO REGIONAL MEDICAL CENTER</span>
+        </div>
     </div>
-</div>
 
-<!-- MAIN -->
-<div class="main">
-    <div class="card">
-        <h2>Create Account</h2>
-        <p>Fill out the form to register</p>
+    <div class="main">
+        <div class="card">
+            <h2>Create Account</h2>
+            <p>Fill out the form to register</p>
+            
+            <?php if($error): ?>
+                <div class="alert error"><?php echo htmlspecialchars($error); ?></div>
+            <?php endif; ?>
+            
+            <?php if($success): ?>
+                <div class="alert success"><?php echo htmlspecialchars($success); ?></div>
+                <?php if (strpos($success, 'successfully') !== false): ?>
+                    <p style="color: blue; text-align: center;">You will be redirected to login page in 5 seconds...</p>
+                    <script>
+                        setTimeout(function() {
+                            window.location.href = 'login.php';
+                        }, 5000);
+                    </script>
+                <?php endif; ?>
+            <?php endif; ?>
 
-        <?php if($error): ?>
-            <div class="alert error"><?php echo htmlspecialchars($error); ?></div>
-        <?php endif; ?>
+            <form id="createAccountForm" method="POST" onsubmit="return validateForm()">
+                <label for="email">Email Address <span class="required">*</span></label>
+                <input type="email" id="email" name="email" placeholder="Enter Email" required 
+                    value="<?php echo htmlspecialchars($email); ?>">
+                
+                <label for="fn">Full Name <span class="required">*</span></label>
+                <input type="text" id="fn" name="fn" placeholder="Enter Full Name" required 
+                    value="<?php echo htmlspecialchars($fullname); ?>">
 
-        <?php if($success): ?>
-            <div class="alert success"><?php echo htmlspecialchars($success); ?></div>
-            <p style="color:blue;text-align:center;">Redirecting to login page…</p>
-        <?php endif; ?>
+                <label for="username">Username <span class="required">*</span></label>
+                <input type="text" id="username" name="username" placeholder="Enter username" required 
+                    value="<?php echo htmlspecialchars($username); ?>">
 
-        <form method="POST" onsubmit="return validateForm()">
-            <label>Email Address *</label>
-            <input type="email" name="email" required value="<?php echo htmlspecialchars($email); ?>">
+                <div class="password-container">
+                    <label for="password" class="sr-only">Password</label>
+                    <input id="password" type="password" name="password" placeholder="Password" required autocomplete="current-password">
+                    <button type="button" id="togglePassword">Show</button>
+                </div>
+                <small>Password must be at least 8 characters long</small>
+                
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                    <label for="division">Division</label>
+                    <select id="division" name="division_id" onchange="loadDepartments(this.value)">
+                        <option value="">Select Division</option>
+                        <?php foreach($divisions as $division): ?>
+                            <option value="<?php echo $division['division_id']; ?>"
+                                <?php echo isset($_POST['division_id']) && $_POST['division_id'] == $division['division_id'] ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($division['division_name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    
+                    <label for="department" style="margin-top: 10px; display: block;">Department</label>
+                    <select id="department" name="department_id" onchange="loadUnits(this.value)" <?php echo empty($_POST['division_id']) ? 'disabled' : ''; ?>>
+                        <option value="">Select Department</option>
+                    </select>
+                    
+                    <label for="unit" style="margin-top: 10px; display: block;">Unit</label>
+                    <select id="unit" name="unit_id" onchange="loadOffices(this.value)" <?php echo empty($_POST['department_id']) ? 'disabled' : ''; ?>>
+                        <option value="">Select Unit</option>
+                    </select>
+                    
+                    <label for="office" style="margin-top: 10px; display: block;">Office</label>
+                    <select id="office" name="office_id" <?php echo empty($_POST['unit_id']) ? 'disabled' : ''; ?>>
+                        <option value="">Select Office</option>
+                    </select>
+                </div>
 
-            <label>Full Name *</label>
-            <input type="text" name="fn" required value="<?php echo htmlspecialchars($fullname); ?>">
-
-            <label>Username *</label>
-            <input type="text" name="username" required value="<?php echo htmlspecialchars($username); ?>">
-
-            <label>Password *</label>
-            <div class="password-container">
-                <input id="password" type="password" name="password" required>
-                <button type="button" id="togglePassword">Show</button>
-            </div>
-
-            <button type="submit" class="submit-btn">Create Account</button>
-            <p class="login-link">
-                Already have an account? <a href="login.php">Click here to login</a>
-            </p>
-        </form>
+                <button type="submit" class="submit-btn">Create Account</button>
+                <p class="login-link">Already have an account? <a href="login.php">Click here to login</a></p>
+            </form>
+        </div>
     </div>
-</div>
 
-<!-- FOOTER -->
-<div class="footer">
-    © 2026 Intercom Directory. All rights reserved.<br>
-    Developed by TNTS Programming Students JT.DP.RR
-</div>
+    <div class="footer">
+        © 2026 Intercom Directory. All rights reserved.<br>
+        Developed by TNTS Programming Students JT.DP.RR
+    </div>
 
 <script>
-// Password toggle
+// Show/hide password
 const passwordInput = document.getElementById('password');
 const togglePasswordBtn = document.getElementById('togglePassword');
+
 togglePasswordBtn.addEventListener('click', () => {
-    if(passwordInput.type === 'password') {
+    if (passwordInput.type === 'password') {
         passwordInput.type = 'text';
         togglePasswordBtn.textContent = 'Hide';
     } else {
@@ -322,14 +417,109 @@ togglePasswordBtn.addEventListener('click', () => {
     }
 });
 
+function loadDepartments(divisionId) {
+    const departmentSelect = document.getElementById('department');
+    const unitSelect = document.getElementById('unit');
+    const officeSelect = document.getElementById('office');
+    
+    if (!divisionId) {
+        departmentSelect.innerHTML = '<option value="">Select Department</option>';
+        unitSelect.innerHTML = '<option value="">Select Unit</option>';
+        officeSelect.innerHTML = '<option value="">Select Office</option>';
+        departmentSelect.disabled = true;
+        unitSelect.disabled = true;
+        officeSelect.disabled = true;
+        return;
+    }
+    
+    // Enable department dropdown
+    departmentSelect.disabled = false;
+    
+    fetch('ajax_get_departments.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'division_id=' + divisionId
+    })
+    .then(response => response.text())
+    .then(data => {
+        departmentSelect.innerHTML = data;
+        // Reset dependent dropdowns
+        unitSelect.innerHTML = '<option value="">Select Unit</option>';
+        officeSelect.innerHTML = '<option value="">Select Office</option>';
+        unitSelect.disabled = true;
+        officeSelect.disabled = true;
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function loadUnits(departmentId) {
+    const unitSelect = document.getElementById('unit');
+    const officeSelect = document.getElementById('office');
+    
+    if (!departmentId) {
+        unitSelect.innerHTML = '<option value="">Select Unit</option>';
+        officeSelect.innerHTML = '<option value="">Select Office</option>';
+        unitSelect.disabled = true;
+        officeSelect.disabled = true;
+        return;
+    }
+    
+    // Enable unit dropdown
+    unitSelect.disabled = false;
+    
+    fetch('ajax_get_units.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'department_id=' + departmentId
+    })
+    .then(response => response.text())
+    .then(data => {
+        unitSelect.innerHTML = data;
+        // Reset dependent dropdown
+        officeSelect.innerHTML = '<option value="">Select Office</option>';
+        officeSelect.disabled = true;
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function loadOffices(unitId) {
+    const officeSelect = document.getElementById('office');
+    
+    if (!unitId) {
+        officeSelect.innerHTML = '<option value="">Select Office</option>';
+        officeSelect.disabled = true;
+        return;
+    }
+    
+    // Enable office dropdown
+    officeSelect.disabled = false;
+    
+    fetch('ajax_get_offices.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'unit_id=' + unitId
+    })
+    .then(response => response.text())
+    .then(data => {
+        officeSelect.innerHTML = data;
+    })
+    .catch(error => console.error('Error:', error));
+}
+
 function validateForm() {
-    if(passwordInput.value.length < 8) {
+    const password = document.getElementById('password').value;
+    if (password.length < 8) {
         alert("Password must be at least 8 characters long!");
         return false;
     }
     return true;
 }
 </script>
-
 </body>
 </html>
