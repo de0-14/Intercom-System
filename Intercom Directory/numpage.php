@@ -233,6 +233,7 @@ if ($user_id) {
                 ca.archived_at,
                 u.username as initiator_name,
                 u.full_name as initiator_full_name,
+                n.head as head_name,
                 (
                     SELECT COUNT(*) 
                     FROM messages_archive 
@@ -245,6 +246,7 @@ if ($user_id) {
                 ) as last_message_time
             FROM conversations_archive ca
             JOIN users u ON ca.initiated_by = u.user_id
+            JOIN numbers n ON ca.number_id = n.number_id
             WHERE ca.number_id = ? 
             " . (!$is_head ? "AND ca.initiated_by = ?" : "") . "
             ORDER BY ca.archived_at DESC
@@ -257,7 +259,7 @@ if ($user_id) {
             $conv_stmt->bind_param("i", $number_id);
         }
     } else {
-        // VIEW ACTIVE CONVERSATIONS
+        // VIEW ACTIVE CONVERSATIONS - FIXED to include head name
         $conversations_query = "
             SELECT 
                 c.conversation_id,
@@ -267,6 +269,7 @@ if ($user_id) {
                 c.last_activity,
                 u.username as initiator_name,
                 u.full_name as initiator_full_name,
+                n.head as head_name,
                 (
                     SELECT COUNT(*) 
                     FROM messages 
@@ -281,6 +284,7 @@ if ($user_id) {
                 ) as last_message_time
             FROM conversations c
             JOIN users u ON c.initiated_by = u.user_id
+            JOIN numbers n ON c.number_id = n.number_id
             WHERE c.number_id = ? 
             AND c.is_archived = 0
             " . (!$is_head ? "AND c.initiated_by = ?" : "") . "
@@ -300,26 +304,48 @@ if ($user_id) {
     $conversations = $conversations_result->fetch_all(MYSQLI_ASSOC);
     $conv_stmt->close();
     
-    // Load selected conversation (only active ones)
+    // Load selected conversation (only active ones) - FIXED VERSION
     if ($selected_conversation_id && !$view_archived) {
+        // First, let's get the head user ID for this contact
+        $head_user_id = getHeadUserId($conn, $number_id);
+        
         $access_check = $conn->prepare("
-            SELECT c.*, u.username as initiator_name, u.full_name as initiator_full_name 
+            SELECT 
+                c.*, 
+                u.username as initiator_name, 
+                u.full_name as initiator_full_name,
+                n.head as head_name,
+                n.head_user_id,
+                CASE 
+                    WHEN c.initiated_by = ? THEN 'user'
+                    WHEN ? = n.head_user_id THEN 'head'
+                    ELSE 'other'
+                END as user_role
             FROM conversations c
             JOIN users u ON c.initiated_by = u.user_id
+            JOIN numbers n ON c.number_id = n.number_id
             WHERE c.conversation_id = ? 
             AND c.is_archived = 0
             AND (
                 c.initiated_by = ? 
-                OR ? = (SELECT head_user_id FROM numbers WHERE number_id = c.number_id)
+                OR ? = n.head_user_id
+                OR ? = c.initiated_by
             )
         ");
-        $access_check->bind_param("iii", $selected_conversation_id, $user_id, $user_id);
+        $access_check->bind_param("iiiiii", 
+            $user_id,                     // For CASE comparison
+            $user_id,                     // For CASE comparison  
+            $selected_conversation_id,    // conversation_id
+            $user_id,                     // initiated_by check
+            $head_user_id,                // head_user_id check
+            $user_id                      // initiated_by check (alternative)
+        );
         $access_check->execute();
         $access_result = $access_check->get_result();
         
         if ($access_result->num_rows === 1) {
             $selected_conversation_info = $access_result->fetch_assoc();
-
+            
             // Mark messages as read
             $mark_read_sql = "
                 UPDATE messages 
@@ -351,6 +377,7 @@ if ($user_id) {
             $messages_stmt->close();
         } else {
             $selected_conversation_id = null;
+            $selected_conversation_info = null;
         }
         $access_check->close();
     }
@@ -402,9 +429,14 @@ if ($user_id) {
 // Load selected archived conversation for viewing
 if ($selected_conversation_id && $view_archived) {
     $access_check = $conn->prepare("
-        SELECT ca.*, u.username as initiator_name, u.full_name as initiator_full_name 
+        SELECT 
+            ca.*, 
+            u.username as initiator_name, 
+            u.full_name as initiator_full_name,
+            n.head as head_name
         FROM conversations_archive ca
         JOIN users u ON ca.initiated_by = u.user_id
+        JOIN numbers n ON ca.number_id = n.number_id
         WHERE ca.conversation_id = ? 
         " . (!$is_head ? "AND ca.initiated_by = ?" : "") . "
     ");
@@ -437,6 +469,7 @@ if ($selected_conversation_id && $view_archived) {
         $messages_stmt->close();
     } else {
         $selected_conversation_id = null;
+        $selected_conversation_info = null;
     }
     $access_check->close();
 }
@@ -664,30 +697,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($is_ajax) {
                     echo json_encode(['success' => false, 'error' => $feedback_error]);
                     exit;
-                }
-            } else {
-                $delete_feedback = $conn->prepare("DELETE FROM feedback WHERE feedback_id = ? AND user_id = ?");
-                $delete_feedback->bind_param("ii", $feedback_id, $user_id);
-                
-                if ($delete_feedback->execute()) {
-                    if ($is_ajax) {
-                        echo json_encode(['success' => true, 'message' => 'Feedback deleted successfully!']);
-                        exit;
-                    } else {
-                        $feedback_success = "Feedback deleted successfully!";
-                        header("Location: $current_script?id=$number_id");
-                        exit;
                     }
                 } else {
-                    $feedback_error = "Failed to delete feedback. Please try again.";
-                    if ($is_ajax) {
-                        echo json_encode(['success' => false, 'error' => 'Failed to delete feedback.']);
-                        exit;
+                    $delete_feedback = $conn->prepare("DELETE FROM feedback WHERE feedback_id = ? AND user_id = ?");
+                    $delete_feedback->bind_param("ii", $feedback_id, $user_id);
+                    
+                    if ($delete_feedback->execute()) {
+                        if ($is_ajax) {
+                            echo json_encode(['success' => true, 'message' => 'Feedback deleted successfully!']);
+                            exit;
+                        } else {
+                            $feedback_success = "Feedback deleted successfully!";
+                            header("Location: $current_script?id=$number_id");
+                            exit;
+                        }
+                    } else {
+                        $feedback_error = "Failed to delete feedback. Please try again.";
+                        if ($is_ajax) {
+                            echo json_encode(['success' => false, 'error' => 'Failed to delete feedback.']);
+                            exit;
+                        }
                     }
+                    $delete_feedback->close();
                 }
-                $delete_feedback->close();
-            }
-            $verify_feedback->close();
+                $verify_feedback->close();
         }
     }
     
@@ -1184,6 +1217,25 @@ if ($is_ajax && $_SERVER['REQUEST_METHOD'] === 'POST') {
         margin-left: auto;
         margin-right: auto;
         width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+    }
+
+    /* ===== SECTIONS LAYOUT ===== */
+    .contact-card,
+    .feedback-section,
+    .messaging-section {
+        width: 100%;
+        margin-bottom: 30px;
+        position: relative;
+        z-index: 1;
+    }
+
+    /* Ensure chat section stays at bottom */
+    .messaging-section {
+        order: 3;
+        margin-top: 20px;
     }
 
     /* ===== CONTACT CARD STYLES ===== */
@@ -1948,6 +2000,123 @@ if ($is_ajax && $_SERVER['REQUEST_METHOD'] === 'POST') {
         margin-bottom: 20px;
     }
     
+    /* User Profile Hover Tooltip - FIXED TO SHOW AT BOTTOM */
+    .message-sender {
+        position: relative;
+        cursor: help;
+        text-decoration: underline dotted;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+    }
+
+    .user-profile-tooltip {
+        display: none;
+        position: absolute;
+        top: 100%;  /* Changed from bottom: 100% to top: 100% */
+        left: 0;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        padding: 15px;
+        width: 300px;
+        z-index: 1000;
+        font-size: 13px;
+        line-height: 1.5;
+        margin-top: 10px;  /* Added margin to create space */
+    }
+
+    .message-sender:hover .user-profile-tooltip {
+        display: block;
+    }
+
+    .user-profile-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .user-profile-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #2b6cb0;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        margin-right: 12px;
+        font-size: 16px;
+    }
+
+    .user-profile-name {
+        font-weight: 600;
+        color: #2d3748;
+        font-size: 14px;
+    }
+
+    .user-profile-email {
+        color: #718096;
+        font-size: 12px;
+        margin-top: 2px;
+    }
+
+    .user-profile-details {
+        display: grid;
+        gap: 8px;
+    }
+
+    .profile-detail-row {
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .profile-detail-label {
+        font-weight: 600;
+        color: #4a5568;
+        min-width: 100px;
+    }
+
+    .profile-detail-value {
+        color: #2d3748;
+        text-align: right;
+        flex: 1;
+    }
+
+    .user-profile-divider {
+        margin: 10px 0;
+        border: none;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .user-profile-head-info {
+        background-color: #f0f9ff;
+        border-left: 3px solid #2b6cb0;
+        padding: 8px 10px;
+        border-radius: 4px;
+        margin-top: 10px;
+        font-size: 12px;
+    }
+
+    .head-indicator {
+        background-color: #38a169;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-left: 5px;
+    }
+
+    .no-head-info {
+        color: #a0aec0;
+        font-style: italic;
+        font-size: 12px;
+    }
+    
     /* Archive Table Styles */
     .archived-table {
         width: 100%;
@@ -2191,6 +2360,13 @@ if ($is_ajax && $_SERVER['REQUEST_METHOD'] === 'POST') {
         .form-row {
             flex-direction: column;
             gap: 0;
+        }
+        
+        .user-profile-tooltip {
+            width: 250px;
+            left: -100px;
+            top: 100%;
+            margin-top: 5px;
         }
     }
 
@@ -2675,9 +2851,9 @@ if ($is_ajax && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             <h3>
                                 📁 Archived Conversation
                                 <?php if ($user_id == $selected_conversation_info['initiated_by']): ?>
-                                    with <?php echo htmlspecialchars($contact['head']); ?>
+                                    with <?php echo htmlspecialchars($selected_conversation_info['head_name'] ?? $contact['head']); ?>
                                 <?php else: ?>
-                                    with <?php echo htmlspecialchars($selected_conversation_info['initiator_name']); ?>
+                                    with <?php echo htmlspecialchars($selected_conversation_info['initiator_name'] ?? 'User'); ?>
                                 <?php endif; ?>
                                 <small style="font-size: 12px; opacity: 0.8;">
                                     (Archived: <?php echo date('M d, Y H:i', strtotime($selected_conversation_info['archived_at'])); ?>)
@@ -2701,11 +2877,85 @@ if ($is_ajax && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="chat-messages" id="chat-messages" style="background-color: #f8f9fa;">
                             <?php foreach ($conversation_messages as $msg): 
                                 $is_sent = ($msg['sender_id'] == $user_id);
+                                
+                                // Get user info for tooltip
+                                $user_info = getUserHierarchyInfo($conn, $msg['sender_user_id']);
+                                $sender_email = !empty($user_info['email']) ? $user_info['email'] : 'No email';
+                                $sender_role = $user_info['role_name'] ?? 'Unknown';
+                                $is_sender_head = $user_info['is_head'] ?? false;
                             ?>
                                 <div class="message-bubble <?php echo $is_sent ? 'message-sent' : 'message-received'; ?>">
                                     <div class="message-text"><?php echo nl2br(htmlspecialchars($msg['message'])); ?></div>
                                     <div class="message-info">
-                                        <span class="message-sender"><?php echo htmlspecialchars($msg['sender_name']); ?></span>
+                                        <span class="message-sender">
+                                            <?php echo htmlspecialchars($msg['sender_name']); ?>
+                                            <div class="user-profile-tooltip">
+                                                <div class="user-profile-header">
+                                                    <div class="user-profile-avatar">
+                                                        <?php echo strtoupper(substr($msg['sender_name'], 0, 1)); ?>
+                                                    </div>
+                                                    <div>
+                                                        <div class="user-profile-name"><?php echo htmlspecialchars($msg['sender_name']); ?></div>
+                                                        <div class="user-profile-email"><?php echo htmlspecialchars($sender_email); ?></div>
+                                                    </div>
+                                                </div>
+                                                <div class="user-profile-details">
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Role:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($sender_role); ?></span>
+                                                    </div>
+                                                    <?php if ($user_info['division']): ?>
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Division:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($user_info['division']); ?></span>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($user_info['department']): ?>
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Department:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($user_info['department']); ?></span>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($user_info['unit']): ?>
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Unit:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($user_info['unit']); ?></span>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($user_info['office']): ?>
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Office:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($user_info['office']); ?></span>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                </div>
+                                                
+                                                <?php if ($is_sender_head): ?>
+                                                    <hr class="user-profile-divider">
+                                                    <div class="user-profile-head-info">
+                                                        <strong>👑 Head Status:</strong> This user is the head of 
+                                                        <?php echo htmlspecialchars($user_info['current_unit'] ?? 'their unit'); ?>
+                                                        <?php if ($user_info['unit_type']): ?>
+                                                            (<?php echo htmlspecialchars($user_info['unit_type']); ?>)
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php elseif (!empty($user_info['head_info'])): ?>
+                                                    <hr class="user-profile-divider">
+                                                    <div class="user-profile-head-info">
+                                                        <strong>👤 Reports to:</strong> 
+                                                        <?php echo htmlspecialchars($user_info['head_info']['head_name'] ?? 'Unknown'); ?>
+                                                        <?php if (!empty($user_info['head_info']['head_email'])): ?>
+                                                            <br><small>Email: <?php echo htmlspecialchars($user_info['head_info']['head_email']); ?></small>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <hr class="user-profile-divider">
+                                                    <div class="no-head-info">
+                                                        No head information available
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </span>
                                         <span class="message-time"><?php echo date('M d, Y H:i', strtotime($msg['created_at'])); ?></span>
                                     </div>
                                 </div>
@@ -2744,7 +2994,7 @@ if ($is_ajax && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                         #<?php echo $conv['conversation_id']; ?>
                                     </td>
                                     <td class="archived-conversation-with">
-                                        <?php echo $is_head ? htmlspecialchars($conv['initiator_name']) : htmlspecialchars($contact['head']); ?>
+                                        <?php echo $is_head ? htmlspecialchars($conv['initiator_name']) : htmlspecialchars($conv['head_name'] ?? $contact['head']); ?>
                                     </td>
                                     <td>
                                         <span class="archived-message-count">
@@ -2782,10 +3032,14 @@ if ($is_ajax && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="chat-container">
                         <div class="chat-header">
                             <h3>
-                                <?php if ($user_id == $selected_conversation_info['initiated_by']): ?>
-                                    Chat with <?php echo htmlspecialchars($contact['head']); ?>
+                                <?php if (isset($selected_conversation_info)): ?>
+                                    <?php if ($user_id == $selected_conversation_info['initiated_by']): ?>
+                                        Chat with <?php echo htmlspecialchars($selected_conversation_info['head_name'] ?? $contact['head']); ?>
+                                    <?php else: ?>
+                                        Chat with <?php echo htmlspecialchars($selected_conversation_info['initiator_name'] ?? 'User'); ?>
+                                    <?php endif; ?>
                                 <?php else: ?>
-                                    Chat with <?php echo htmlspecialchars($selected_conversation_info['initiator_name']); ?>
+                                    Chat with <?php echo htmlspecialchars($contact['head']); ?>
                                 <?php endif; ?>
                             </h3>
                             <a href="<?php echo $current_script; ?>?id=<?php echo $number_id; ?>" class="chat-back-btn">← Back to Conversations</a>
@@ -2794,11 +3048,85 @@ if ($is_ajax && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="chat-messages" id="chat-messages">
                             <?php foreach ($conversation_messages as $msg): 
                                 $is_sent = ($msg['sender_id'] == $user_id);
+                                
+                                // Get user info for tooltip
+                                $user_info = getUserHierarchyInfo($conn, $msg['sender_user_id']);
+                                $sender_email = !empty($user_info['email']) ? $user_info['email'] : 'No email';
+                                $sender_role = $user_info['role_name'] ?? 'Unknown';
+                                $is_sender_head = $user_info['is_head'] ?? false;
                             ?>
                                 <div class="message-bubble <?php echo $is_sent ? 'message-sent' : 'message-received'; ?>">
                                     <div class="message-text"><?php echo nl2br(htmlspecialchars($msg['message'])); ?></div>
                                     <div class="message-info">
-                                        <span class="message-sender"><?php echo htmlspecialchars($msg['sender_name']); ?></span>
+                                        <span class="message-sender">
+                                            <?php echo htmlspecialchars($msg['sender_name']); ?>
+                                            <div class="user-profile-tooltip">
+                                                <div class="user-profile-header">
+                                                    <div class="user-profile-avatar">
+                                                        <?php echo strtoupper(substr($msg['sender_name'], 0, 1)); ?>
+                                                    </div>
+                                                    <div>
+                                                        <div class="user-profile-name"><?php echo htmlspecialchars($msg['sender_name']); ?></div>
+                                                        <div class="user-profile-email"><?php echo htmlspecialchars($sender_email); ?></div>
+                                                    </div>
+                                                </div>
+                                                <div class="user-profile-details">
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Role:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($sender_role); ?></span>
+                                                    </div>
+                                                    <?php if ($user_info['division']): ?>
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Division:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($user_info['division']); ?></span>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($user_info['department']): ?>
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Department:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($user_info['department']); ?></span>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($user_info['unit']): ?>
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Unit:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($user_info['unit']); ?></span>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($user_info['office']): ?>
+                                                    <div class="profile-detail-row">
+                                                        <span class="profile-detail-label">Office:</span>
+                                                        <span class="profile-detail-value"><?php echo htmlspecialchars($user_info['office']); ?></span>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                </div>
+                                                
+                                                <?php if ($is_sender_head): ?>
+                                                    <hr class="user-profile-divider">
+                                                    <div class="user-profile-head-info">
+                                                        <strong>👑 Head Status:</strong> This user is the head of 
+                                                        <?php echo htmlspecialchars($user_info['current_unit'] ?? 'their unit'); ?>
+                                                        <?php if ($user_info['unit_type']): ?>
+                                                            (<?php echo htmlspecialchars($user_info['unit_type']); ?>)
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php elseif (!empty($user_info['head_info'])): ?>
+                                                    <hr class="user-profile-divider">
+                                                    <div class="user-profile-head-info">
+                                                        <strong>👤 Reports to:</strong> 
+                                                        <?php echo htmlspecialchars($user_info['head_info']['head_name'] ?? 'Unknown'); ?>
+                                                        <?php if (!empty($user_info['head_info']['head_email'])): ?>
+                                                            <br><small>Email: <?php echo htmlspecialchars($user_info['head_info']['head_email']); ?></small>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <hr class="user-profile-divider">
+                                                    <div class="no-head-info">
+                                                        No head information available
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </span>
                                         <span class="message-time"><?php echo date('M d, Y H:i', strtotime($msg['created_at'])); ?></span>
                                     </div>
                                 </div>
@@ -2833,7 +3161,7 @@ if ($is_ajax && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <div class="conversation-header">
                                     <div class="conversation-with">
                                         <?php if ($user_id == $conv['initiated_by']): ?>
-                                            Chat with <?php echo htmlspecialchars($contact['head']); ?>
+                                            Chat with <?php echo htmlspecialchars($conv['head_name'] ?? $contact['head']); ?>
                                         <?php else: ?>
                                             Chat with <?php echo htmlspecialchars($conv['initiator_name']); ?>
                                         <?php endif; ?>

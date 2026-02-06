@@ -1198,6 +1198,7 @@ function getAdminUnreadChatsCount($conn, $admin_id) {
     return $row['chat_count'] ?? 0;
 }
 // Function to get user's organizational hierarchy and head info
+// Update the getUserHierarchyInfo function in conn.php (around line 1710)
 function getUserHierarchyInfo($conn, $user_id) {
     $hierarchy_info = array(
         'division' => null,
@@ -1206,41 +1207,133 @@ function getUserHierarchyInfo($conn, $user_id) {
         'office' => null,
         'head_info' => null,
         'role_name' => null,
-        'position' => null
+        'position' => null,
+        'email' => null,
+        'is_head' => false,
+        'heads_contacts' => [],
+        'unit_type' => null,
+        'current_unit' => null,
+        'full_name' => null
     );
     
-    // Get user's role and role name
-    $role_sql = "SELECT u.role_id, r.role_name 
-                 FROM users u 
-                 JOIN roles r ON u.role_id = r.role_id 
-                 WHERE u.user_id = ?";
-    $role_stmt = $conn->prepare($role_sql);
-    $role_stmt->bind_param("i", $user_id);
-    $role_stmt->execute();
-    $role_result = $role_stmt->get_result();
-    $role_data = $role_result->fetch_assoc();
-    $role_stmt->close();
+    // Get user's basic info including email
+    $basic_sql = "SELECT u.role_id, r.role_name, u.full_name, u.email, 
+                  u.division_id, u.department_id, u.unit_id, u.office_id
+                  FROM users u 
+                  JOIN roles r ON u.role_id = r.role_id 
+                  WHERE u.user_id = ?";
+    $basic_stmt = $conn->prepare($basic_sql);
+    $basic_stmt->bind_param("i", $user_id);
+    $basic_stmt->execute();
+    $basic_result = $basic_stmt->get_result();
+    $basic_data = $basic_result->fetch_assoc();
+    $basic_stmt->close();
     
-    if (!$role_data) {
+    if (!$basic_data) {
         return $hierarchy_info;
     }
     
-    $role_id = $role_data['role_id'];
-    $hierarchy_info['role_name'] = $role_data['role_name'];
+    $role_id = $basic_data['role_id'];
+    $hierarchy_info['role_name'] = $basic_data['role_name'];
+    $hierarchy_info['full_name'] = $basic_data['full_name'];
+    $hierarchy_info['email'] = $basic_data['email'];
     
-    // Get user's full name
-    $name_sql = "SELECT full_name FROM users WHERE user_id = ?";
-    $name_stmt = $conn->prepare($name_sql);
-    $name_stmt->bind_param("i", $user_id);
-    $name_stmt->execute();
-    $name_result = $name_stmt->get_result();
-    $name_data = $name_result->fetch_assoc();
-    $name_stmt->close();
+    // Check if user is a head (role 3-6)
+    $hierarchy_info['is_head'] = ($role_id >= 3 && $role_id <= 6);
     
-    $hierarchy_info['full_name'] = $name_data['full_name'] ?? '';
-    
+    // If user is a head (roles 3-6), get what units they head
+    if ($hierarchy_info['is_head']) {
+        $head_contacts = getHeadContacts($conn, $user_id);
+        $hierarchy_info['heads_contacts'] = $head_contacts;
+        
+        // Determine what type of head they are and get their unit info
+        $head_sql = "SELECT 
+                        n.division_id, n.department_id, n.unit_id, n.office_id,
+                        d.division_name,
+                        dept.department_name,
+                        u.unit_name,
+                        o.office_name
+                      FROM numbers n
+                      LEFT JOIN divisions d ON n.division_id = d.division_id
+                      LEFT JOIN departments dept ON n.department_id = dept.department_id
+                      LEFT JOIN units u ON n.unit_id = u.unit_id
+                      LEFT JOIN offices o ON n.office_id = o.office_id
+                      WHERE n.head_user_id = ? AND n.status = 'active'
+                      LIMIT 1";
+        
+        $head_stmt = $conn->prepare($head_sql);
+        $head_stmt->bind_param("i", $user_id);
+        $head_stmt->execute();
+        $head_result = $head_stmt->get_result();
+        
+        if ($head_result->num_rows > 0) {
+            $head_data = $head_result->fetch_assoc();
+            
+            // Determine position based on role
+            $position = "";
+            $unit_type = "";
+            switch($role_id) {
+                case 3: 
+                    $position = "Division Head";
+                    $unit_type = "Division";
+                    $hierarchy_info['position'] = $position . " of " . ($head_data['division_name'] ?? 'Division');
+                    $hierarchy_info['division'] = $head_data['division_name'];
+                    break;
+                case 4: 
+                    $position = "Department Head";
+                    $unit_type = "Department";
+                    $hierarchy_info['position'] = $position . " of " . ($head_data['department_name'] ?? 'Department');
+                    $hierarchy_info['department'] = $head_data['department_name'];
+                    break;
+                case 5: 
+                    $position = "Unit Head";
+                    $unit_type = "Unit";
+                    $hierarchy_info['position'] = $position . " of " . ($head_data['unit_name'] ?? 'Unit');
+                    $hierarchy_info['unit'] = $head_data['unit_name'];
+                    break;
+                case 6: 
+                    $position = "Office Head";
+                    $unit_type = "Office";
+                    $hierarchy_info['position'] = $position . " of " . ($head_data['office_name'] ?? 'Office');
+                    $hierarchy_info['office'] = $head_data['office_name'];
+                    break;
+            }
+            
+            $hierarchy_info['unit_type'] = $unit_type;
+            
+            // Set hierarchy levels
+            if ($head_data['division_id']) {
+                $hierarchy_info['division'] = $head_data['division_name'];
+            }
+            if ($head_data['department_id']) {
+                $hierarchy_info['department'] = $head_data['department_name'];
+            }
+            if ($head_data['unit_id']) {
+                $hierarchy_info['unit'] = $head_data['unit_name'];
+            }
+            if ($head_data['office_id']) {
+                $hierarchy_info['office'] = $head_data['office_name'];
+            }
+            
+            // Determine current unit
+            if ($head_data['office_name']) {
+                $hierarchy_info['current_unit'] = $head_data['office_name'];
+                $hierarchy_info['unit_type'] = 'Office';
+            } else if ($head_data['unit_name']) {
+                $hierarchy_info['current_unit'] = $head_data['unit_name'];
+                $hierarchy_info['unit_type'] = 'Unit';
+            } else if ($head_data['department_name']) {
+                $hierarchy_info['current_unit'] = $head_data['department_name'];
+                $hierarchy_info['unit_type'] = 'Department';
+            } else if ($head_data['division_name']) {
+                $hierarchy_info['current_unit'] = $head_data['division_name'];
+                $hierarchy_info['unit_type'] = 'Division';
+            }
+        }
+        $head_stmt->close();
+    } 
     // If user is staff (role_id 7), find their organizational unit and head
-    if ($role_id == 7) { // Staff role
+    else if ($role_id == 7) {
         // Try to find staff in numbers table (assigned to a unit)
         $staff_sql = "SELECT 
                         n.division_id, n.department_id, n.unit_id, n.office_id,
@@ -1267,7 +1360,7 @@ function getUserHierarchyInfo($conn, $user_id) {
             
             // Get head information
             if ($staff_data['head_user_id']) {
-                $head_sql = "SELECT full_name FROM users WHERE user_id = ?";
+                $head_sql = "SELECT full_name, email FROM users WHERE user_id = ?";
                 $head_stmt = $conn->prepare($head_sql);
                 $head_stmt->bind_param("i", $staff_data['head_user_id']);
                 $head_stmt->execute();
@@ -1277,6 +1370,7 @@ function getUserHierarchyInfo($conn, $user_id) {
                 
                 $hierarchy_info['head_info'] = array(
                     'head_name' => $head_data['full_name'] ?? $staff_data['head'],
+                    'head_email' => $head_data['email'] ?? '',
                     'head_user_id' => $staff_data['head_user_id']
                 );
             }
@@ -1298,91 +1392,68 @@ function getUserHierarchyInfo($conn, $user_id) {
             // Determine current unit
             if ($staff_data['office_name']) {
                 $hierarchy_info['current_unit'] = $staff_data['office_name'];
+                $hierarchy_info['unit_type'] = 'Office';
             } else if ($staff_data['unit_name']) {
                 $hierarchy_info['current_unit'] = $staff_data['unit_name'];
+                $hierarchy_info['unit_type'] = 'Unit';
             } else if ($staff_data['department_name']) {
                 $hierarchy_info['current_unit'] = $staff_data['department_name'];
+                $hierarchy_info['unit_type'] = 'Department';
             } else if ($staff_data['division_name']) {
                 $hierarchy_info['current_unit'] = $staff_data['division_name'];
+                $hierarchy_info['unit_type'] = 'Division';
             }
         }
         $staff_stmt->close();
-    } 
-    // If user is a head (roles 3-6), show their position and unit
-    else if ($role_id >= 3 && $role_id <= 6) { // Division Head to Office Head roles
-        $head_sql = "SELECT 
-                        n.division_id, n.department_id, n.unit_id, n.office_id,
-                        d.division_name,
-                        dept.department_name,
-                        u.unit_name,
-                        o.office_name
-                      FROM numbers n
-                      LEFT JOIN divisions d ON n.division_id = d.division_id
-                      LEFT JOIN departments dept ON n.department_id = dept.department_id
-                      LEFT JOIN units u ON n.unit_id = u.unit_id
-                      LEFT JOIN offices o ON n.office_id = o.office_id
-                      WHERE n.head_user_id = ? AND n.status = 'active'
-                      LIMIT 1";
-        
-        $head_stmt = $conn->prepare($head_sql);
-        $head_stmt->bind_param("i", $user_id);
-        $head_stmt->execute();
-        $head_result = $head_stmt->get_result();
-        
-        if ($head_result->num_rows > 0) {
-            $head_data = $head_result->fetch_assoc();
-            
-            // Determine position based on role
-            $position = "";
-            switch($role_id) {
-                case 3: 
-                    $position = "Division Head";
-                    $hierarchy_info['position'] = $position . " of " . ($head_data['division_name'] ?? 'Division');
-                    break;
-                case 4: 
-                    $position = "Department Head";
-                    $hierarchy_info['position'] = $position . " of " . ($head_data['department_name'] ?? 'Department');
-                    break;
-                case 5: 
-                    $position = "Unit Head";
-                    $hierarchy_info['position'] = $position . " of " . ($head_data['unit_name'] ?? 'Unit');
-                    break;
-                case 6: 
-                    $position = "Office Head";
-                    $hierarchy_info['position'] = $position . " of " . ($head_data['office_name'] ?? 'Office');
-                    break;
-            }
-            
-            // Set hierarchy levels
-            if ($head_data['division_id']) {
-                $hierarchy_info['division'] = $head_data['division_name'];
-            }
-            if ($head_data['department_id']) {
-                $hierarchy_info['department'] = $head_data['department_name'];
-            }
-            if ($head_data['unit_id']) {
-                $hierarchy_info['unit'] = $head_data['unit_name'];
-            }
-            if ($head_data['office_id']) {
-                $hierarchy_info['office'] = $head_data['office_name'];
-            }
-            
-            // Determine current unit
-            if ($head_data['office_name']) {
-                $hierarchy_info['current_unit'] = $head_data['office_name'];
-            } else if ($head_data['unit_name']) {
-                $hierarchy_info['current_unit'] = $head_data['unit_name'];
-            } else if ($head_data['department_name']) {
-                $hierarchy_info['current_unit'] = $head_data['department_name'];
-            } else if ($head_data['division_name']) {
-                $hierarchy_info['current_unit'] = $head_data['division_name'];
-            }
-        }
-        $head_stmt->close();
     }
-    // For Admin and MCC roles
+    // For Admin and MCC roles (1-2)
     else if ($role_id <= 2) {
         $hierarchy_info['position'] = $hierarchy_info['role_name'];
+        $hierarchy_info['current_unit'] = 'Administration';
+        $hierarchy_info['unit_type'] = 'Administration';
+    }
+    
+    // Also check if user is assigned to any unit in users table
+    if (!$hierarchy_info['current_unit']) {
+        $user_unit_sql = "SELECT 
+                            d.division_name,
+                            dept.department_name,
+                            u.unit_name,
+                            o.office_name
+                          FROM users us
+                          LEFT JOIN divisions d ON us.division_id = d.division_id
+                          LEFT JOIN departments dept ON us.department_id = dept.department_id
+                          LEFT JOIN units u ON us.unit_id = u.unit_id
+                          LEFT JOIN offices o ON us.office_id = o.office_id
+                          WHERE us.user_id = ?";
+        
+        $user_unit_stmt = $conn->prepare($user_unit_sql);
+        $user_unit_stmt->bind_param("i", $user_id);
+        $user_unit_stmt->execute();
+        $user_unit_result = $user_unit_stmt->get_result();
+        
+        if ($user_unit_result->num_rows > 0) {
+            $user_unit_data = $user_unit_result->fetch_assoc();
+            
+            if ($user_unit_data['office_name']) {
+                $hierarchy_info['office'] = $user_unit_data['office_name'];
+                $hierarchy_info['current_unit'] = $user_unit_data['office_name'];
+                $hierarchy_info['unit_type'] = 'Office';
+            } else if ($user_unit_data['unit_name']) {
+                $hierarchy_info['unit'] = $user_unit_data['unit_name'];
+                $hierarchy_info['current_unit'] = $user_unit_data['unit_name'];
+                $hierarchy_info['unit_type'] = 'Unit';
+            } else if ($user_unit_data['department_name']) {
+                $hierarchy_info['department'] = $user_unit_data['department_name'];
+                $hierarchy_info['current_unit'] = $user_unit_data['department_name'];
+                $hierarchy_info['unit_type'] = 'Department';
+            } else if ($user_unit_data['division_name']) {
+                $hierarchy_info['division'] = $user_unit_data['division_name'];
+                $hierarchy_info['current_unit'] = $user_unit_data['division_name'];
+                $hierarchy_info['unit_type'] = 'Division';
+            }
+        }
+        $user_unit_stmt->close();
     }
     
     return $hierarchy_info;

@@ -400,7 +400,7 @@ function autoArchiveInactiveAdminChats($conn, $inactive_minutes = 30) {
             WHERE is_archived = FALSE 
             AND last_activity < ? 
             AND chat_id IN (
-                SELECT DISTINCT chat_id FROM admin_messages
+                SELECT DISTINCT chat_id FROM admin_messages 
             )
         ");
         $get_inactive_stmt->bind_param("s", $inactive_time);
@@ -423,4 +423,5 @@ function autoArchiveInactiveAdminChats($conn, $inactive_minutes = 30) {
         return 0;
     }
 }
+
 ?>
