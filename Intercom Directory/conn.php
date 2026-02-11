@@ -706,6 +706,7 @@ function getAdminUnreadChatsCount($conn, $admin_id) {
 }
 
 function getUserHierarchyInfo($conn, $user_id) {
+    // Initialize with default values for all expected keys
     $hierarchy_info = array(
         'division' => null,
         'department' => null,
@@ -714,11 +715,17 @@ function getUserHierarchyInfo($conn, $user_id) {
         'head_info' => null,
         'role_name' => null,
         'position' => null,
-        'full_name' => ''
+        'full_name' => '',
+        'email' => '',
+        'is_head' => false,
+        'current_unit' => null,
+        'unit_type' => null,
+        'heads_contacts' => array(),
+        'role_id' => null
     );
     
     // Get user's role and name
-    $role_sql = "SELECT u.role_id, r.role_name, u.full_name 
+    $role_sql = "SELECT u.role_id, r.role_name, u.full_name, u.email 
                  FROM users u 
                  JOIN roles r ON u.role_id = r.role_id 
                  WHERE u.user_id = ?";
@@ -732,11 +739,24 @@ function getUserHierarchyInfo($conn, $user_id) {
     if(!$role_data) return $hierarchy_info;
     
     $role_id = $role_data['role_id'];
+    $hierarchy_info['role_id'] = $role_id;
     $hierarchy_info['role_name'] = $role_data['role_name'];
     $hierarchy_info['full_name'] = $role_data['full_name'];
+    $hierarchy_info['email'] = $role_data['email'] ?? '';
     
-    // Get user's organizational info
-    $info_sql = "SELECT n.*, d.division_name, dept.department_name, u.unit_name, o.office_name
+    // Check if user is a head (role_id 3-6 are heads)
+    $hierarchy_info['is_head'] = ($role_id >= 3 && $role_id <= 6);
+    
+    // Get user's organizational info - check if they head any units
+    $info_sql = "SELECT n.*, d.division_name, dept.department_name, u.unit_name, o.office_name,
+                        COALESCE(d.division_name, dept.department_name, u.unit_name, o.office_name) as current_unit_name,
+                        CASE 
+                            WHEN n.division_id IS NOT NULL THEN 'Division'
+                            WHEN n.department_id IS NOT NULL THEN 'Department'
+                            WHEN n.unit_id IS NOT NULL THEN 'Unit'
+                            WHEN n.office_id IS NOT NULL THEN 'Office'
+                            ELSE 'Unknown'
+                        END as unit_type
                  FROM numbers n
                  LEFT JOIN divisions d ON n.division_id = d.division_id
                  LEFT JOIN departments dept ON n.department_id = dept.department_id
@@ -753,6 +773,35 @@ function getUserHierarchyInfo($conn, $user_id) {
             $hierarchy_info['department'] = $data['department_name'];
             $hierarchy_info['unit'] = $data['unit_name'];
             $hierarchy_info['office'] = $data['office_name'];
+            $hierarchy_info['current_unit'] = $data['current_unit_name'];
+            $hierarchy_info['unit_type'] = $data['unit_type'];
+            
+            // Get all contacts this user heads
+            $contacts_sql = "SELECT n.*, d.division_name, dept.department_name, u.unit_name, o.office_name,
+                                    CASE 
+                                        WHEN n.division_id IS NOT NULL THEN 'Division'
+                                        WHEN n.department_id IS NOT NULL THEN 'Department'
+                                        WHEN n.unit_id IS NOT NULL THEN 'Unit'
+                                        WHEN n.office_id IS NOT NULL THEN 'Office'
+                                        ELSE 'Unknown'
+                                    END as unit_type
+                             FROM numbers n
+                             LEFT JOIN divisions d ON n.division_id = d.division_id
+                             LEFT JOIN departments dept ON n.department_id = dept.department_id
+                             LEFT JOIN units u ON n.unit_id = u.unit_id
+                             LEFT JOIN offices o ON n.office_id = o.office_id
+                             WHERE n.head_user_id = ? AND n.status = 'active'";
+            
+            $contacts_params = array($user_id);
+            $contacts_stmt = sqlsrv_prepare($conn, $contacts_sql, $contacts_params);
+            if($contacts_stmt && sqlsrv_execute($contacts_stmt)) {
+                $heads_contacts = array();
+                while($contact = sqlsrv_fetch_array($contacts_stmt, SQLSRV_FETCH_ASSOC)) {
+                    $heads_contacts[] = $contact;
+                }
+                $hierarchy_info['heads_contacts'] = $heads_contacts;
+                sqlsrv_free_stmt($contacts_stmt);
+            }
             
             // Determine position
             if($role_id == 3) $hierarchy_info['position'] = "Division Head of " . ($data['division_name'] ?? 'Division');
@@ -760,21 +809,50 @@ function getUserHierarchyInfo($conn, $user_id) {
             elseif($role_id == 5) $hierarchy_info['position'] = "Unit Head of " . ($data['unit_name'] ?? 'Unit');
             elseif($role_id == 6) $hierarchy_info['position'] = "Office Head of " . ($data['office_name'] ?? 'Office');
             elseif($role_id <= 2) $hierarchy_info['position'] = $hierarchy_info['role_name'];
+            else $hierarchy_info['position'] = 'Staff';
+        }
+    }
+    
+    // If not a head, get head information
+    if (!$hierarchy_info['is_head'] && ($role_id == 7 || $role_id > 6)) {
+        // Try to find which unit this staff belongs to and get head info
+        $staff_info_sql = "SELECT u.full_name, u.email 
+                           FROM users u 
+                           WHERE u.user_id IN (
+                               SELECT n.head_user_id 
+                               FROM numbers n 
+                               WHERE n.head_user_id IS NOT NULL 
+                               AND n.number_id IN (
+                                   SELECT number_id FROM user_numbers WHERE user_id = ?
+                               )
+                           )";
+        
+        $staff_params = array($user_id);
+        $staff_stmt = sqlsrv_prepare($conn, $staff_info_sql, $staff_params);
+        if($staff_stmt && sqlsrv_execute($staff_stmt)) {
+            $head_data = sqlsrv_fetch_array($staff_stmt, SQLSRV_FETCH_ASSOC);
+            if($head_data) {
+                $hierarchy_info['head_info'] = array(
+                    'head_name' => $head_data['full_name'],
+                    'head_email' => $head_data['email']
+                );
+            }
+            sqlsrv_free_stmt($staff_stmt);
         }
     }
     
     return $hierarchy_info;
 }
 
-// Add this function to conn.php (anywhere in the functions section):
+// Add this function to your archive_functions.php or create it in your conn.php
 function getLastInsertId($conn) {
-    $sql = "SELECT SCOPE_IDENTITY() as new_id";
-    $stmt = sqlsrv_query($conn, $sql);
-    if ($stmt && $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-        sqlsrv_free_stmt($stmt);
-        return $row['new_id'];
+    $query = "SELECT SCOPE_IDENTITY() AS last_id";
+    $stmt = sqlsrv_query($conn, $query);
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        return $row['last_id'];
     }
-    return 0;
+    return null;
 }
 
 function time_ago($datetime, $full = false) {

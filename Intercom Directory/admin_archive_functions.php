@@ -283,6 +283,9 @@ function getActiveAdminChats($conn, $user_id, $is_admin = true) {
     
     $chats = [];
     while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        // Ensure all expected fields exist
+        $row['last_message'] = $row['last_message'] ?? 'No messages yet';
+        $row['last_message_time'] = $row['last_message_time'] ?? null;
         $chats[] = $row;
     }
     
@@ -322,6 +325,9 @@ function getArchivedAdminChats($conn, $user_id, $is_admin = true) {
     
     $chats = [];
     while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        // Ensure all expected fields exist
+        $row['last_message'] = $row['last_message'] ?? 'No messages';
+        $row['last_message_time'] = $row['last_message_time'] ?? null;
         $chats[] = $row;
     }
     

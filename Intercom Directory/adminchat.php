@@ -10,9 +10,8 @@ if(!isLoggedIn()) {
 
 date_default_timezone_set('Asia/Manila');
 
-if ($conn) {
-    $conn->query("SET time_zone = '+08:00'");
-}
+// SQL Server doesn't need timezone setting like MySQL
+// Remove: if ($conn) { $conn->query("SET time_zone = '+08:00'"); }
 
 $user_id = $_SESSION['user_id'];
 $is_admin = isAdmin();
@@ -40,19 +39,23 @@ if ($is_admin) {
     $removed_this_load = removeOldArchivedAdminChats($conn, null, $user_id, $seven_days_ago);
 }
 
+// Get archived count - SQL Server version
 if ($is_admin) {
-    $archived_count_stmt = $conn->prepare("SELECT COUNT(*) as archive_count FROM admin_chats_archive WHERE admin_id = ?");
-    $archived_count_stmt->bind_param("i", $user_id);
+    $archived_count_sql = "SELECT COUNT(*) as archive_count FROM admin_chats_archive WHERE admin_id = ?";
+    $archived_count_params = array($user_id);
 } else {
-    $archived_count_stmt = $conn->prepare("SELECT COUNT(*) as archive_count FROM admin_chats_archive WHERE user_id = ?");
-    $archived_count_stmt->bind_param("i", $user_id);
+    $archived_count_sql = "SELECT COUNT(*) as archive_count FROM admin_chats_archive WHERE user_id = ?";
+    $archived_count_params = array($user_id);
 }
 
-$archived_count_stmt->execute();
-$archive_result = $archived_count_stmt->get_result();
-$archive_data = $archive_result->fetch_assoc();
-$archived_chats_count = $archive_data['archive_count'] ?? 0;
-$archived_count_stmt->close();
+$archived_count_stmt = sqlsrv_prepare($conn, $archived_count_sql, $archived_count_params);
+if ($archived_count_stmt && sqlsrv_execute($archived_count_stmt)) {
+    $archive_data = sqlsrv_fetch_array($archived_count_stmt, SQLSRV_FETCH_ASSOC);
+    $archived_chats_count = $archive_data['archive_count'] ?? 0;
+}
+if ($archived_count_stmt) {
+    sqlsrv_free_stmt($archived_count_stmt);
+}
 
 if ($view_archived) {
     $archived_chats = getArchivedAdminChats($conn, $user_id, $is_admin);
@@ -294,7 +297,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                                 <div class="chat-name"><?php echo $is_admin ? htmlspecialchars($chat['full_name']) : 'Admin ' . htmlspecialchars($chat['full_name']); ?><span class="archive-badge">Archived</span></div>
                                 <div class="chat-preview"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages', 0, 30)); ?></div>
                             </div>
-                            <div class="chat-time"><?php if($chat['archived_at']): ?><?php echo date('M d', strtotime($chat['archived_at'])); ?><?php endif; ?></div>
+                            <div class="chat-time"><?php if($chat['archived_at']): ?><?php echo date('M d', strtotime($chat['archived_at']->format('Y-m-d H:i:s'))); ?><?php endif; ?></div>
                             
                             <div class="hierarchy-tooltip">
                                 <h4><?php echo htmlspecialchars($hierarchy_info['full_name']); ?></h4>
@@ -346,7 +349,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                             <div class="chat-name"><?php echo $is_admin ? htmlspecialchars($chat['full_name']) : 'Admin ' . htmlspecialchars($chat['full_name']); ?></div>
                             <div class="chat-preview"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages yet', 0, 30)); ?></div>
                         </div>
-                        <div class="chat-time"><?php if($chat['last_message_time']): ?><?php echo date('H:i', strtotime($chat['last_message_time'])); ?><?php endif; ?></div>
+                        <div class="chat-time"><?php if($chat['last_message_time']): ?><?php echo date('H:i', strtotime($chat['last_message_time']->format('Y-m-d H:i:s'))); ?><?php endif; ?></div>
                         
                         <div class="hierarchy-tooltip">
                             <h4><?php echo htmlspecialchars($hierarchy_info['full_name']); ?></h4>
@@ -512,8 +515,8 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                 
                 <?php if ($view_archived): ?>
                     <div class="archived-info-bar">
-                        <div><strong>Archived:</strong> <?php echo date('M d, Y H:i', strtotime($selected_chat['archived_at'] ?? 'N/A')); ?></div>
-                        <div><strong>Last Activity:</strong> <?php echo date('M d, Y H:i', strtotime($selected_chat['last_activity'] ?? 'N/A')); ?></div>
+                        <div><strong>Archived:</strong> <?php echo date('M d, Y H:i', strtotime($selected_chat['archived_at']->format('Y-m-d H:i:s') ?? 'N/A')); ?></div>
+                        <div><strong>Last Activity:</strong> <?php echo date('M d, Y H:i', strtotime($selected_chat['last_activity']->format('Y-m-d H:i:s') ?? 'N/A')); ?></div>
                     </div>
                 <?php endif; ?>
                 
@@ -556,7 +559,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                         </div>
                         <div class="message-bubble">
                             <?php echo nl2br(htmlspecialchars($msg['message'])); ?>
-                            <div class="message-time"><?php echo date('H:i', strtotime($msg['created_at'])); ?></div>
+                            <div class="message-time"><?php echo date('H:i', strtotime($msg['created_at']->format('Y-m-d H:i:s'))); ?></div>
                         </div>
                     </div>
                     <?php endforeach; ?>

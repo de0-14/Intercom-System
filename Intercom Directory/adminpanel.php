@@ -3,6 +3,21 @@ require_once 'conn.php';
 require_once 'admin_archive_functions.php';
 updateAllUsersActivity($conn);
 
+function safeDateFormat($dateObj, $format = 'M d, Y H:i') {
+    if (empty($dateObj) || $dateObj === null) return '';
+    
+    if ($dateObj instanceof DateTime) {
+        return $dateObj->format($format);
+    } elseif (is_string($dateObj)) {
+        return date($format, strtotime($dateObj));
+    }
+    return '';
+}
+
+function getArrayValue($array, $key, $default = '') {
+    return isset($array[$key]) ? $array[$key] : $default;
+}
+
 if(!isAdmin()) {
     header('Location: homepage.php');
     exit();
@@ -449,16 +464,16 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
             <div class="chat-list">
                 <?php if (!$view_archived): ?>
                     <?php foreach($admin_chats as $chat): 
-                        $other_user_id = $chat['user_id'];
+                        $other_user_id = getArrayValue($chat, 'user_id');
                         $user_hierarchy = getUserHierarchyInfo($conn, $other_user_id);
                     ?>
-                    <a href="adminpanel.php?chat_id=<?php echo $chat['chat_id']; ?>" class="chat-item <?php echo $selected_chat_id == $chat['chat_id'] ? 'active' : ''; ?>">
-                        <div class="chat-avatar"><?php echo strtoupper(substr($chat['full_name'], 0, 1)); ?></div>
+                    <a href="adminpanel.php?chat_id=<?php echo getArrayValue($chat, 'chat_id'); ?>" class="chat-item <?php echo $selected_chat_id == getArrayValue($chat, 'chat_id') ? 'active' : ''; ?>">
+                        <div class="chat-avatar"><?php echo strtoupper(substr(getArrayValue($chat, 'full_name', ''), 0, 1)); ?></div>
                         <div class="chat-info">
-                            <div class="chat-name"><?php echo htmlspecialchars($chat['full_name']); ?></div>
-                            <div class="chat-preview"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages yet', 0, 30)); ?></div>
+                            <div class="chat-name"><?php echo htmlspecialchars(getArrayValue($chat, 'full_name', 'Unknown User')); ?></div>
+                            <div class="chat-preview"><?php echo htmlspecialchars(substr(getArrayValue($chat, 'last_message', 'No messages yet'), 0, 30)); ?></div>
                         </div>
-                        <div class="chat-time"><?php if($chat['last_message_time']): ?><?php echo date('H:i', strtotime($chat['last_message_time'])); ?><?php endif; ?></div>
+                        <div class="chat-time"><?php echo safeDateFormat(getArrayValue($chat, 'last_message_time'), 'H:i'); ?></div>
                         
                         <div class="hierarchy-tooltip">
                             <h4><?php echo htmlspecialchars($user_hierarchy['full_name']); ?></h4>
@@ -489,20 +504,20 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                                 <?php endif; ?>
                             </div>
                         </div>
-                    </a>
+                     </a>
                     <?php endforeach; ?>
                 <?php else: ?>
                     <?php foreach($archived_chats as $chat): 
-                        $other_user_id = $chat['user_id'];
+                        $other_user_id = getArrayValue($chat, 'user_id');
                         $user_hierarchy = getUserHierarchyInfo($conn, $other_user_id);
                     ?>
-                    <a href="adminpanel.php?view=archived&chat_id=<?php echo $chat['chat_id']; ?>" class="chat-item <?php echo $selected_chat_id == $chat['chat_id'] ? 'active' : ''; ?>">
-                        <div class="chat-avatar" style="background-color: #718096;"><?php echo strtoupper(substr($chat['full_name'], 0, 1)); ?></div>
+                    <a href="adminpanel.php?view=archived&chat_id=<?php echo getArrayValue($chat, 'chat_id'); ?>" class="chat-item <?php echo $selected_chat_id == getArrayValue($chat, 'chat_id') ? 'active' : ''; ?>">
+                        <div class="chat-avatar" style="background-color: #718096;"><?php echo strtoupper(substr(getArrayValue($chat, 'full_name', ''), 0, 1)); ?></div>
                         <div class="chat-info">
-                            <div class="chat-name"><?php echo htmlspecialchars($chat['full_name']); ?> <span class="archive-badge">Archived</span></div>
-                            <div class="chat-preview"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages', 0, 30)); ?></div>
+                            <div class="chat-name"><?php echo htmlspecialchars(getArrayValue($chat, 'full_name', 'Unknown User')); ?> <span class="archive-badge">Archived</span></div>
+                            <div class="chat-preview"><?php echo htmlspecialchars(substr(getArrayValue($chat, 'last_message', 'No messages'), 0, 30)); ?></div>
                         </div>
-                        <div class="chat-time"><?php if($chat['archived_at']): ?><?php echo date('M d', strtotime($chat['archived_at'])); ?><?php endif; ?></div>
+                        <div class="chat-time"><?php echo safeDateFormat(getArrayValue($chat, 'archived_at'), 'M d'); ?></div>
                         
                         <div class="hierarchy-tooltip">
                             <h4><?php echo htmlspecialchars($user_hierarchy['full_name']); ?></h4>
@@ -606,7 +621,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                         </div>
                         <div class="message-bubble">
                             <?php echo nl2br(htmlspecialchars($msg['message'])); ?>
-                            <div style="font-size: 11px; opacity: 0.8; margin-top: 5px;"><?php echo date('H:i', strtotime($msg['created_at'])); ?></div>
+                            <div style="font-size: 11px; opacity: 0.8; margin-top: 5px;"><?php echo safeDateFormat(getArrayValue($msg, 'created_at'), 'H:i'); ?></div>
                         </div>
                     </div>
                     <?php endforeach; ?>
@@ -646,13 +661,13 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                                 
                                 // Get message count for archived chat - SQL Server version
                                 $msg_count_sql = "SELECT COUNT(*) as msg_count FROM admin_messages_archive WHERE chat_id = ?";
-                                $msg_count_params = array($chat['chat_id']);
+                                $msg_count_params = array(getArrayValue($chat, 'chat_id'));
                                 $msg_count_stmt = sqlsrv_query($conn, $msg_count_sql, $msg_count_params);
                                 $msg_count = 0;
-                                
+
                                 if ($msg_count_stmt && sqlsrv_fetch($msg_count_stmt)) {
                                     $msg_data = sqlsrv_get_field($msg_count_stmt, 0);
-                                    $msg_count = $msg_data;
+                                    $msg_count = $msg_data ?: 0;
                                 }
                                 if ($msg_count_stmt) sqlsrv_free_stmt($msg_count_stmt);
                             ?>
@@ -660,7 +675,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                                     <td style="font-weight: 500; color: #2d3748;"><?php echo htmlspecialchars($chat['full_name']); ?><br><small style="color: #718096; font-size: 11px;"><?php echo htmlspecialchars($user_hierarchy['role_name'] ?? 'N/A'); ?><?php if ($user_hierarchy['current_unit'] ?? ''): ?> • <?php echo htmlspecialchars($user_hierarchy['current_unit']); ?><?php endif; ?></small></td>
                                     <td style="color: #718096; font-size: 13px;"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages', 0, 50)); ?></td>
                                     <td><span style="background-color: #e2e8f0; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 12px;"><?php echo $msg_count; ?> messages</span></td>
-                                    <td style="color: #718096; font-size: 13px;"><?php echo date('M d, Y H:i', strtotime($chat['archived_at'])); ?></td>
+                                    <td style="color: #718096; font-size: 13px;"><?php echo safeDateFormat(getArrayValue($chat, 'archived_at'), 'M d, Y H:i'); ?></td>
                                     <td><a href="adminpanel.php?view=archived&chat_id=<?php echo $chat['chat_id']; ?>" class="view-btn">View</a></td>
                                 </tr>
                             <?php endforeach; ?>
