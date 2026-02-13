@@ -1,34 +1,2281 @@
 <?php
 require_once 'conn.php';
-?>
+updateAllUsersActivity($conn);
 
+// DEBUG: Check if connection works
+if(!$conn) {
+    die("NO CONNECTION!");
+}
+
+// Get current user ID and role
+$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
+$is_admin = isAdmin();
+$user_role_id = isset($_SESSION['role_id']) ? $_SESSION['role_id'] : null;
+
+// DEBUG: Check session
+echo "<!-- DEBUG: User ID = " . ($_SESSION['user_id'] ?? 'NOT SET') . " -->";
+echo "<!-- DEBUG: Is Admin = " . ($is_admin ? 'YES' : 'NO') . " -->";
+echo "<!-- DEBUG: User Role ID = " . $user_role_id . " -->";
+
+// Get all contact numbers where this user is the head_user_id
+$user_number_ids = [];
+$user_numbers_count = 0;
+
+if($user_id) {
+    // Get all numbers where this user is the head_user_id
+    $sql = "SELECT number_id FROM numbers WHERE head_user_id = ?";
+    $stmt = sqlsrv_query($conn, $sql, array($user_id));
+    if($stmt) {
+        while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+            $user_number_ids[$row['number_id']] = true;
+            $user_numbers_count++;
+        }
+        sqlsrv_free_stmt($stmt);
+    }
+}
+
+echo "<!-- DEBUG: User's connected numbers count = " . $user_numbers_count . " -->";
+
+function getAllContactNumbers($conn) {
+    // Get ALL numbers first to see what we have
+    $sql = "SELECT COUNT(*) as total FROM numbers";
+    $stmt = sqlsrv_query($conn, $sql);
+    $total = 0;
+    if($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        $total = $row['total'] ?? 0;
+        sqlsrv_free_stmt($stmt);
+    }
+    echo "<!-- DEBUG: Total numbers in database = $total -->\n";
+    
+    // Now get all numbers with their organizational info
+    $sql = "
+        SELECT 
+            n.number_id,
+            n.numbers as contact_number,
+            n.email as contact_email,
+            n.description,
+            n.head_user_id,
+            n.division_id,
+            n.department_id,
+            n.unit_id,
+            n.office_id,
+            
+            -- Head user info
+            u_head.email as head_user_email,
+            u_head.full_name as head_user_name,
+            
+            -- Division info
+            d.division_name,
+            d.status as division_status,
+            
+            -- Department info
+            dept.department_name,
+            dept.status as department_status,
+            d2.division_name as dept_division_name,
+            
+            -- Unit info
+            u.unit_name,
+            u.status as unit_status,
+            dept2.department_name as unit_department_name,
+            d3.division_name as unit_division_name,
+            
+            -- Office info
+            o.office_name,
+            o.status as office_status,
+            u2.unit_name as office_unit_name,
+            dept3.department_name as office_department_name,
+            d4.division_name as office_division_name,
+            
+            -- Feedback ratings
+            ISNULL(f.avg_rating, 0) as avg_rating,
+            ISNULL(f.total_feedbacks, 0) as total_feedbacks
+            
+        FROM numbers n
+        
+        -- Head user
+        LEFT JOIN users u_head ON n.head_user_id = u_head.user_id
+        
+        -- Division (if exists)
+        LEFT JOIN divisions d ON n.division_id = d.division_id
+        
+        -- Department (if exists) with its division
+        LEFT JOIN departments dept ON n.department_id = dept.department_id
+        LEFT JOIN divisions d2 ON dept.division_id = d2.division_id
+        
+        -- Unit (if exists) with its department and division
+        LEFT JOIN units u ON n.unit_id = u.unit_id
+        LEFT JOIN departments dept2 ON u.department_id = dept2.department_id
+        LEFT JOIN divisions d3 ON dept2.division_id = d3.division_id
+        
+        -- Office (if exists) with its unit, department and division
+        LEFT JOIN offices o ON n.office_id = o.office_id
+        LEFT JOIN units u2 ON o.unit_id = u2.unit_id
+        LEFT JOIN departments dept3 ON u2.department_id = dept3.department_id
+        LEFT JOIN divisions d4 ON dept3.division_id = d4.division_id
+        
+        -- Feedback
+        LEFT JOIN (
+            SELECT 
+                number_id, 
+                AVG(CAST(rating as float)) as avg_rating, 
+                COUNT(*) as total_feedbacks 
+            FROM feedback 
+            GROUP BY number_id
+        ) f ON n.number_id = f.number_id
+        
+        -- REMOVE the WHERE clause to see ALL numbers
+        -- WHERE n.status = 'active'
+        ORDER BY 
+            CASE 
+                WHEN n.division_id IS NOT NULL THEN 1
+                WHEN n.department_id IS NOT NULL THEN 2
+                WHEN n.unit_id IS NOT NULL THEN 3
+                WHEN n.office_id IS NOT NULL THEN 4
+                ELSE 5
+            END,
+            COALESCE(d.division_name, dept.department_name, u.unit_name, o.office_name),
+            n.description
+    ";
+    
+    $stmt = sqlsrv_query($conn, $sql);
+    if($stmt === false) {
+        $errors = sqlsrv_errors();
+        die("SQL Error: " . print_r($errors, true));
+        return [];
+    }
+    
+    $numbers = [];
+    while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        // Debug each row
+        echo "<!-- DEBUG Row {$row['number_id']}: ";
+        echo "Div=" . ($row['division_id'] ?? 'NULL') . "({$row['division_name']}), ";
+        echo "Dept=" . ($row['department_id'] ?? 'NULL') . "({$row['department_name']}), ";
+        echo "Unit=" . ($row['unit_id'] ?? 'NULL') . "({$row['unit_name']}), ";
+        echo "Office=" . ($row['office_id'] ?? 'NULL') . "({$row['office_name']}) -->\n";
+        
+        // Determine unit type and name
+        if(!is_null($row['division_id']) && $row['division_id'] != '') {
+            $row['unit_type'] = 'Division';
+            $row['unit_name'] = $row['division_name'] ?? 'Unknown Division';
+            $row['status'] = $row['division_status'] ?? 'unknown';
+            $row['parent_division'] = null;
+        } elseif(!is_null($row['department_id']) && $row['department_id'] != '') {
+            $row['unit_type'] = 'Department';
+            $row['unit_name'] = $row['department_name'] ?? 'Unknown Department';
+            $row['status'] = $row['department_status'] ?? 'unknown';
+            $row['parent_division'] = $row['dept_division_name'] ?? null;
+        } elseif(!is_null($row['unit_id']) && $row['unit_id'] != '') {
+            $row['unit_type'] = 'Unit';
+            $row['unit_name'] = $row['unit_name'] ?? 'Unknown Unit';
+            $row['status'] = $row['unit_status'] ?? 'unknown';
+            $row['parent_division'] = $row['unit_division_name'] ?? null;
+        } elseif(!is_null($row['office_id']) && $row['office_id'] != '') {
+            $row['unit_type'] = 'Office';
+            $row['unit_name'] = $row['office_name'] ?? 'Unknown Office';
+            $row['status'] = $row['office_status'] ?? 'unknown';
+            $row['parent_division'] = $row['office_division_name'] ?? null;
+        } else {
+            $row['unit_type'] = 'Unknown';
+            $row['unit_name'] = 'Unknown Unit';
+            $row['status'] = 'unknown';
+            $row['parent_division'] = null;
+        }
+        
+        $numbers[] = $row;
+    }
+    
+    sqlsrv_free_stmt($stmt);
+    echo "<!-- DEBUG: Processed " . count($numbers) . " numbers -->\n";
+    return $numbers;
+}
+
+$onlineAdminCount = getOnlineAdmins($conn);
+$allNumbers = getAllContactNumbers($conn);
+
+$head_contacts = [];
+$total_head_unread = 0;
+
+// Separate user's numbers and other numbers
+$user_numbers = []; // Numbers where user is head_user_id
+$regularNumbers = []; // All other numbers
+
+if($user_id) {
+    foreach($allNumbers as $number) {
+        if(isset($user_number_ids[$number['number_id']])) {
+            $user_numbers[] = $number;
+        } else {
+            $regularNumbers[] = $number;
+        }
+    }
+    
+    // Get head contacts for notifications (if this function exists)
+    $head_contacts = getHeadContacts($conn, $user_id);
+    $total_head_unread = getHeadUnreadCount($conn, $user_id);
+    
+    if(!$is_admin) {
+        $user_unread = getUnreadAdminMessageCount($conn, $user_id, false);
+        $user_chats = getUserChatsWithAllAdmins($conn, $user_id);
+    } else {
+        $user_unread = 0;
+        $user_chats = [];
+    }
+} else {
+    // If not logged in, all numbers go to regularNumbers
+    $regularNumbers = $allNumbers;
+    $user_unread = 0;
+    $user_chats = [];
+}
+
+$admin_notifications_count = 0;
+$admin_chat_requests = [];
+
+if($is_admin && $user_id) {
+    $admin_notifications_count = getAdminUnreadChatsCount($conn, $user_id);
+    $admin_chat_requests = getAdminChatRequests($conn, $user_id);
+}
+
+// If user has numbers they're connected to, show them in a pinned section
+$has_user_numbers = !empty($user_numbers);
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <link rel="stylesheet" type="text/css" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hospital Contact Directory</title>
+<style>
+* { box-sizing: border-box; margin:0; padding:0; font-family:"Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #edf4fc;
+}
+
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background-color: #07417f;
+    color: white;
+    padding: 20px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-bottom: 3px solid #2b6cb0;
+}
+
+.header .logo {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.header .logo img {
+    width: 55px;
+    height: 55px;
+    object-fit: contain;
+}
+
+.header .logo span {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+ul.nav {
+    display: flex;
+    list-style: none;
+    gap: 8px;
+}
+
+ul.nav li a {
+    display: block;
+    color: white;
+    text-decoration: none;
+    padding: 10px 18px;
+    font-weight: 600;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+ul.nav li a:hover {
+    background-color: rgba(255,255,255,0.2);
+}
+
+/* Active state for navigation - matches profilepage.php exactly */
+ul.nav li a.active {
+    background-color: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
+ul.nav li a.active:hover {
+    background-color: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
+.content {
+    flex: 1;
+    margin-top: 100px;
+    padding: 20px;
+}
+
+.contact-directory {
+    padding: 20px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.contact-directory h2 {
+    color: #2b6cb0;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 10px;
+}
+
+.stats-summary {
+    display: flex;
+    justify-content: space-around;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: white;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.stat-item {
+    text-align: center;
+    padding: 10px;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2b6cb0;
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #718096;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.search-filter {
+    background-color: white;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    border: 1px solid #dee2e6;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.search-filter input {
+    width: 100%;
+    padding: 12px 15px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.search-filter input:focus {
+    outline: none;
+    border-color: #2b6cb0;
+    box-shadow: 0 0 0 3px rgba(43,108,176,0.1);
+}
+
+.filter-options {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: white;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.filter-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 8px 16px;
+    border: 1px solid #e2e8f0;
+    background-color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filter-btn.active {
+    background-color: #2b6cb0;
+    color: white;
+    border-color: #2b6cb0;
+}
+
+.filter-btn:hover {
+    background-color: #edf2f7;
+}
+
+.sorting-options {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.sorting-options h4 {
+    color: #4a5568;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.sort-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.sort-btn {
+    padding: 6px 12px;
+    border: 1px solid #e2e8f0;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.sort-btn.active {
+    background-color: #38a169;
+    color: white;
+    border-color: #38a169;
+}
+
+.sort-btn:hover {
+    background-color: #e2e8f0;
+}
+
+.contact-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.contact-table th {
+    background-color: #2b6cb0;
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+}
+
+.contact-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.contact-table tr:hover {
+    background-color: #f7fafc;
+}
+
+.contact-table tr:last-child td {
+    border-bottom: none;
+}
+
+.unit-type {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.type-division { background-color: #bee3f8; color: #2c5282; }
+.type-department { background-color: #c6f6d5; color: #276749; }
+.type-unit { background-color: #fed7d7; color: #9b2c2c; }
+.type-office { background-color: #fefcbf; color: #744210; }
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-active { background-color: #c6f6d5; color:#276749; border:1px solid #9ae6b4; }
+.status-decommissioned { background-color:#fed7d7; color:#9b2c2c; border:1px solid #feb2b2; }
+.status-inactive { background-color:#e2e8f0; color:#4a5568; border:1px solid #cbd5e0; }
+
+.rating-container {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.star-rating-small {
+    display: flex;
+    gap: 2px;
+}
+
+.star {
+    color: #e2e8f0;
+    font-size: 14px;
+}
+
+.star.filled {
+    color: #ffc107;
+}
+
+.rating-value {
+    font-size: 12px;
+    color: #718096;
+    min-width: 40px;
+}
+
+.contact-number { font-family:'Courier New', monospace; font-weight:bold; color:#2d3748; }
+.contact-head { color:#4a5568; font-style:italic; }
+.contact-description { color:#718096; font-size:14px; }
+.parent-info { font-size:12px; color:#a0aec0; }
+
+.no-contacts { text-align:center; padding:40px; color:#718096; font-style:italic; }
+
+.footer {
+    background-color: #07417f;
+    color: #fff;
+    text-align: center;
+    padding: 18px 10px;
+    font-size: 14px;
+    margin-top: auto;
+}
+
+@media (max-width: 768px) {
+    .header { flex-direction: column; padding: 15px; text-align: center; }
+    .header .logo span { font-size: 1.3rem; }
+    .contact-table { display: block; overflow-x:auto; }
+    .stats-summary { flex-direction: column; gap:15px; }
+    .filter-buttons, .sort-buttons { flex-direction: column; }
+}
+.clickable-row {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.clickable-row:hover {
+    background-color: #f0f8ff;
+}
+
+.header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.header-section h2 {
+    margin: 0;
+    flex: 1;
+}
+
+.admin-online-container {
+    position: relative;
+    display: inline-block;
+}
+
+.admin-circle-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2b6cb0, #1f4f8b);
+    color: white;
+    border: 3px solid white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 18px;
+    box-shadow: 0 3px 10px rgba(43, 108, 176, 0.3);
+    transition: all 0.3s;
+    position: relative;
+}
+
+.admin-circle-btn:hover {
+    background: linear-gradient(135deg, #1f4f8b, #153a6e);
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px rgba(43, 108, 176, 0.4);
+}
+
+.admin-circle-btn::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 10px;
+    height: 10px;
+    background-color: #38a169;
+    border-radius: 50%;
+    border: 2px solid white;
+}
+
+.admin-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 300px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+    margin-top: 15px;
+    padding: 15px;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s;
+}
+
+.admin-online-container:hover .admin-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.admin-dropdown h4 {
+    color: #2b6cb0;
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 16px;
+}
+
+.admin-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.admin-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f7fafc;
+}
+
+.admin-item:last-child {
+    border-bottom: none;
+}
+
+.admin-name {
+    color: #2d3748;
+    font-weight: 500;
+}
+
+.admin-status {
+    color: #718096;
+    font-size: 12px;
+    background: #f7fafc;
+    padding: 3px 8px;
+    border-radius: 4px;
+}
+
+.no-admins {
+    text-align: center;
+    color: #a0aec0;
+    font-style: italic;
+    padding: 20px;
+}
+
+.admin-footer {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.current-user {
+    color: #2b6cb0;
+    font-weight: 600;
+    font-size: 13px;
+    text-align: center;
+}
+
+.admin-chat-container {
+    position: relative;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+.admin-chat-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #38a169, #2f855a);
+    color: white;
+    border: 3px solid white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 20px;
+    box-shadow: 0 3px 10px rgba(56, 161, 105, 0.3);
+    transition: all 0.3s;
+    position: relative;
+}
+
+.admin-chat-btn:hover {
+    background: linear-gradient(135deg, #2f855a, #276749);
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px rgba(56, 161, 105, 0.4);
+}
+
+.admin-chat-btn::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 10px;
+    height: 10px;
+    background-color: #2b6cb0;
+    border-radius: 50%;
+    border: 2px solid white;
+}
+
+.admin-chat-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 350px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+    margin-top: 15px;
+    padding: 15px;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s;
+}
+
+.admin-chat-container:hover .admin-chat-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.admin-chat-dropdown h4 {
+    color: #2b6cb0;
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 16px;
+}
+
+.admin-chat-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 15px;
+}
+
+.admin-chat-item {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    text-decoration: none;
+    color: #2d3748;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+}
+
+.admin-chat-item:hover {
+    background-color: #f7fafc;
+    border-color: #e2e8f0;
+}
+
+.admin-chat-avatar {
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    background: #2b6cb0;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-right: 10px;
+    font-size: 14px;
+}
+
+.admin-chat-info {
+    flex: 1;
+}
+
+.admin-chat-name {
+    font-weight: 500;
+    display: block;
+    margin-bottom: 3px;
+    font-size: 14px;
+}
+
+.admin-chat-preview {
+    font-size: 12px;
+    color: #718096;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-chat-time {
+    font-size: 11px;
+    color: #a0aec0;
+}
+
+.new-chat-btn {
+    display: block;
+    padding: 10px;
+    background-color: #2b6cb0;
+    color: white;
+    border-radius: 6px;
+    text-decoration: none;
+    text-align: center;
+    font-weight: 500;
+    margin-top: 10px;
+    transition: background-color 0.2s;
+}
+
+.new-chat-btn:hover {
+    background-color: #1f4f8b;
+}
+
+.chat-notification {
+    background-color: #fff5f5;
+    color: #742a2a;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    text-align: center;
+    border: 1px solid #fed7d7;
+    margin-top: 10px;
+}
+
+.chat-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background-color: #e53e3e;
+    color: white;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    min-width: 20px;
+    text-align: center;
+    font-weight: bold;
+    border: 2px solid white;
+}
+
+.admin-select-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 15px;
+}
+
+.admin-select-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    border-radius: 6px;
+    margin-bottom: 5px;
+    text-decoration: none;
+    color: #2d3748;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+}
+
+.admin-select-item:hover {
+    background-color: #f7fafc;
+    border-color: #e2e8f0;
+}
+
+.admin-select-name {
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.contact-email {
+    color: #666;
+    font-size: 12px;
+    display: block;
+    margin-top: 3px;
+    word-break: break-all;
+}
+
+.contact-email:before {
+    content: "📧 ";
+    margin-right: 3px;
+}
+
+@media (max-width: 768px) {
+    .header-section {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .admin-online-container, .admin-chat-container {
+        align-self: flex-end;
+    }
+    
+    .admin-dropdown, .admin-chat-dropdown {
+        width: 280px;
+        right: -50px;
+    }
+    
+    .admin-circle-btn, .admin-chat-btn {
+        width: 45px;
+        height: 45px;
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .admin-dropdown, .admin-chat-dropdown {
+        width: 250px;
+        right: -30px;
+    }
+}
+
+.head-contact-section {
+    margin-bottom: 30px;
+    background: linear-gradient(135deg, #f0fff4 0%, #e6fffa 100%);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    border: 1px solid #c6f6d5;
+}
+
+.head-contact-section h3 {
+    color: #276749;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #9ae6b4;
+}
+
+.head-contact-section h3 .notification-badge {
+    background-color: #e53e3e;
+    color: white;
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 12px;
+    min-width: 20px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.head-contact-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 15px;
+}
+
+.head-contact-table th {
+    background-color: #38a169;
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+}
+
+.head-contact-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: #f7fafc;
+}
+
+.head-contact-table tr {
+    background-color: #f0fff4;
+}
+
+.head-contact-table tr:hover {
+    background-color: #c6f6d5;
+}
+
+.head-contact-table tr:last-child td {
+    border-bottom: none;
+}
+
+.head-contact-row {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.head-contact-row:hover {
+    background-color: #9ae6b4;
+}
+
+.head-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    background-color: #38a169;
+    color: white;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-left: 8px;
+}
+
+.unread-badge {
+    display: inline-block;
+    background-color: #e53e3e;
+    color: white;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 8px;
+    font-weight: bold;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.pinned-icon {
+    color: #38a169;
+    font-size: 14px;
+    margin-right: 5px;
+}
+
+.status-head-active {
+    background-color: #9ae6b4;
+    color: #276749;
+    border: 1px solid #68d391;
+}
+
+.regular-contact-section {
+    margin-top: 20px;
+}
+
+.admin-notification-container {
+    position: relative;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+.admin-notification-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #e53e3e, #c53030);
+    color: white;
+    border: 3px solid white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 20px;
+    box-shadow: 0 3px 10px rgba(229, 62, 62, 0.3);
+    transition: all 0.3s;
+    position: relative;
+}
+
+.admin-notification-btn:hover {
+    background: linear-gradient(135deg, #c53030, #9b2c2c);
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px rgba(229, 62, 62, 0.4);
+}
+
+.notification-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 350px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+    margin-top: 15px;
+    padding: 0;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s;
+}
+
+.admin-notification-container:hover .notification-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.notification-header {
+    padding: 15px;
+    background: #2b6cb0;
+    color: white;
+    border-radius: 8px 8px 0 0;
+}
+
+.notification-header h4 {
+    margin: 0;
+    color: white;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.notification-list {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.notification-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    border: 1px solid #e2e8f0;
+    transition: all 0.2s;
+    text-decoration: none;
+    color: inherit;
+}
+
+.notification-item:hover {
+    background-color: #f7fafc;
+    border-color: #cbd5e0;
+}
+
+.notification-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #2b6cb0;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-right: 12px;
+    font-size: 16px;
+}
+
+.notification-info {
+    flex: 1;
+}
+
+.notification-name {
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 3px;
+    font-size: 14px;
+}
+
+.notification-meta {
+    font-size: 12px;
+    color: #718096;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.notification-time {
+    color: #a0aec0;
+}
+
+.message-count-badge {
+    background-color: #e53e3e;
+    color: white;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 20px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.no-notifications {
+    text-align: center;
+    padding: 30px 20px;
+    color: #a0aec0;
+    font-style: italic;
+}
+
+.notification-footer {
+    padding: 12px;
+    border-top: 1px solid #e2e8f0;
+    text-align: center;
+}
+
+.view-all-btn {
+    display: inline-block;
+    padding: 8px 16px;
+    background-color: #2b6cb0;
+    color: white;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.view-all-btn:hover {
+    background-color: #1f4f8b;
+}
+
+.notification-bell-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background-color: #e53e3e;
+    color: white;
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    min-width: 24px;
+    text-align: center;
+    font-weight: bold;
+    border: 2px solid white;
+    animation: pulse 1.5s infinite;
+}
+
+.notification-indicator {
+    position: relative;
+}
+
+.nav-notification-badge {
+    background-color: #e53e3e;
+    color: white;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+    margin-left: 5px;
+    animation: pulse 2s infinite;
+    display: inline-block;
+}
+
+/* Add a new style for user numbers section */
+.user-numbers-section {
+    margin-bottom: 30px;
+    background: linear-gradient(135deg, #e6f3ff 0%, #d4e7ff 100%);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    border: 1px solid #93c5fd;
+}
+
+.user-numbers-section h3 {
+    color: #1e40af;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #93c5fd;
+}
+
+.user-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    background-color: #1e40af;
+    color: white;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-left: 8px;
+}
+
+.user-contact-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 15px;
+}
+
+.user-contact-table th {
+    background-color: #1e40af;
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+}
+
+.user-contact-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: #f8fafc;
+}
+
+.user-contact-table tr {
+    background-color: #eff6ff;
+}
+
+.user-contact-table tr:hover {
+    background-color: #dbeafe;
+}
+
+.user-contact-table tr:last-child td {
+    border-bottom: none;
+}
+
+.user-contact-row {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.user-contact-row:hover {
+    background-color: #bfdbfe !important;
+}
+
+.status-user-active {
+    background-color: #bfdbfe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+</style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">
-            <img src="hospitalLogo.png" alt="Hospital Logo">
-            <span>DAVAO REGIONAL MEDICAL CENTER</span>
-        </div>
-        <div>
-            <ul class="nav">
-            <li id="nest"><a href="#"> Nest </a></li>
-			<li id="categories"><a href=""> Categories </a></li>
-			<li id="savedmangas"><a href=""> Saved Mangas </a></li>
-			<li id="profile"><a href=""> Profile </a></li>
-			<?php if (isLoggedIn()) : ?>
-				<li id="logout"><a href="logout.php"> Logout (<?php echo html_entity_decode(getUserName()); ?>)</a></li>
-			<?php else: ?>
-				<li id="logout"><a href="login.php"> Login </a></li>
-			<?php endif; ?>
-        </ul>
+
+<div class="header">
+    <div class="logo">
+        <img src="hospitalLogo.png" alt="Hospital Logo">
+        <span>DAVAO REGIONAL MEDICAL CENTER</span>
+    </div>
+    <ul class="nav">
+        <li><a href="homepage.php">Homepage</a></li>
+        <?php if (isLoggedIn()): ?>
+            <?php if (isAdmin()): ?>
+                <li><a href="createpage.php">Create page</a></li>
+                <li><a href="editpage.php">Edit page</a></li>
+                <li>
+                    <a href="adminpanel.php" class="notification-indicator">
+                        Operator Panel 
+                        <?php if ($admin_notifications_count > 0): ?>
+                            <span class="nav-notification-badge"><?php echo $admin_notifications_count; ?></span>
+                        <?php endif; ?>
+                    </a>
+                </li>
+            <?php else: ?>
+                <li><a href="adminchat.php">Chat with an Operator <?php echo $user_unread > 0 ? "($user_unread)" : ""; ?></a></li>
+            <?php endif; ?>
+            <li><a href="profilepage.php">Profile</a></li>
+            <li><a href="logout.php">Logout (<?php echo getUserName(); ?>)</a></li>
+        <?php else: ?>
+            <li><a href="login.php">Login</a></li>
+        <?php endif; ?>
+    </ul>
+    
+    <?php if($is_admin && $user_id): ?>
+    <div class="admin-notification-container">
+        <button class="admin-notification-btn" id="adminNotificationBtn">
+            🔔
+            <?php if($admin_notifications_count > 0): ?>
+                <span class="notification-bell-badge"><?php echo $admin_notifications_count; ?></span>
+            <?php endif; ?>
+        </button>
+        <div class="notification-dropdown" id="notificationDropdown">
+            <div class="notification-header">
+                <h4>📨 New Chat Requests (<?php echo $admin_notifications_count; ?>)</h4>
+            </div>
+            <div class="notification-list">
+                <?php if(!empty($admin_chat_requests)): ?>
+                    <?php foreach($admin_chat_requests as $request): 
+                        $chat_id = getAdminChatWithUser($conn, $user_id, $request['user_id']);
+                        $chat_link = $chat_id ? "adminpanel.php?chat_id=$chat_id" : "adminpanel.php?start_chat=" . $request['user_id'];
+                    ?>
+                    <a href="<?php echo $chat_link; ?>" class="notification-item">
+                        <div class="notification-avatar">
+                            <?php echo strtoupper(substr($request['full_name'], 0, 1)); ?>
+                        </div>
+                        <div class="notification-info">
+                            <div class="notification-name"><?php echo htmlspecialchars($request['full_name']); ?></div>
+                            <div class="notification-meta">
+                                <span class="notification-time"><?php echo time_ago($request['first_message_time']); ?></span>
+                                <?php if($request['message_count'] > 1): ?>
+                                    <span class="message-count-badge"><?php echo $request['message_count']; ?> messages</span>
+                                <?php else: ?>
+                                    <span class="message-count-badge">New message</span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </a>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div class="no-notifications">
+                        No new chat requests
+                    </div>
+                <?php endif; ?>
+            </div>
+            <div class="notification-footer">
+                <a href="adminpanel.php" class="view-all-btn">View All Chats</a>
+            </div>
         </div>
     </div>
+    <?php endif; ?>
+</div>
+
+<div class="content">
+    <div class="contact-directory">
+        <h2>Hospital Contact Directory</h2>
+        <div class="header-section">
+            <h2 style="margin: 0; flex: 1;"></h2>
+            
+            <!-- Show user's connected numbers badge if they have any -->
+            <?php if($has_user_numbers): ?>
+            <div style="position: relative; display: inline-block; margin-right: 10px;">
+                <div style="position: absolute; top: -8px; right: -8px; background-color: #1e40af; color: white; font-size: 12px; padding: 3px 8px; border-radius: 12px; min-width: 20px; text-align: center; font-weight: bold; border: 2px solid white; z-index: 1001; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                    <?php echo count($user_numbers); ?>
+                </div>
+                <div style="padding: 8px 12px; background: linear-gradient(135deg, #1e40af, #1e3a8a); color: white; border-radius: 6px; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px;">
+                    <span>👤</span> My Numbers
+                </div>
+            </div>
+            <?php endif; ?>
+            
+            <?php if($user_id && !$is_admin): ?>
+                <?php if(!empty($head_contacts) && $total_head_unread > 0): ?>
+                <div style="position: relative; display: inline-block; margin-right: 10px;">
+                    <div style="position: absolute; top: -8px; right: -8px; background-color: #e53e3e; color: white; font-size: 12px; padding: 3px 8px; border-radius: 12px; min-width: 20px; text-align: center; font-weight: bold; border: 2px solid white; z-index: 1001; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                        <?php echo $total_head_unread; ?>
+                    </div>
+                    <div style="padding: 8px 12px; background-color: #38a169; color: white; border-radius: 6px; font-size: 14px; font-weight: 500;">
+                        <span class="pinned-icon">📌</span> My Numbers
+                    </div>
+                </div>
+                <?php endif; ?>
+            <?php endif; ?>
+            
+            <div class="admin-online-container">
+                <button class="admin-circle-btn" id="adminOnlineBtn">
+                    <?php echo $onlineAdminCount; ?>
+                </button>
+                <div class="admin-dropdown" id="adminDropdown">
+                    <h4>Currently Online (<?php echo $onlineAdminCount; ?>)</h4>
+                    <div class="admin-list">
+                        <?php
+                        // FIXED: SQL Server query
+                        $timeout = 300;
+                        $onlineTime = time() - $timeout;
+                        
+                        // Using SQL Server syntax
+                        $sql = "SELECT username, role_id, last_activity FROM users 
+                                WHERE role_id = 1 
+                                AND last_activity > ? 
+                                ORDER BY username";
+                        
+                        $params = array($onlineTime);
+                        $stmt = sqlsrv_query($conn, $sql, $params);
+                        
+                        if ($stmt === false) {
+                            echo '<div class="no-admins">Error loading admins</div>';
+                        } else {
+                            $hasAdmins = false;
+                            while ($admin = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+                                $hasAdmins = true;
+                                $lastActivity = $admin['last_activity'];
+                                $timeAgo = time() - $lastActivity;
+                                $minutesAgo = floor($timeAgo / 60);
+                                
+                                echo '<div class="admin-item">';
+                                echo '<span class="admin-name">' . htmlspecialchars($admin['username']) . '</span>';
+                                echo '<span class="admin-status">';
+                                if ($minutesAgo < 1) {
+                                    echo 'Just now';
+                                } elseif ($minutesAgo == 1) {
+                                    echo '1 min ago';
+                                } else {
+                                    echo $minutesAgo . ' mins ago';
+                                }
+                                echo '</span>';
+                                echo '</div>';
+                            }
+                            
+                            sqlsrv_free_stmt($stmt);
+                            
+                            if (!$hasAdmins) {
+                                echo '<div class="no-admins">No admins currently online</div>';
+                            }
+                        }
+                        ?>
+                    </div>
+                    <div class="admin-footer">
+                        <?php 
+                        if (isAdmin()) {
+                            echo '<div class="current-user">You: ' . htmlspecialchars($_SESSION['username'] ?? '') . '</div>';
+                        }
+                        ?>
+                    </div>
+                </div>
+            </div>
+            
+            <?php if(isLoggedIn() && !isAdmin()): ?>
+            <div class="admin-chat-container">
+                <button class="admin-chat-btn" id="adminChatBtn">
+                    💬
+                    <?php if($user_unread > 0): ?>
+                        <span class="chat-badge"><?php echo $user_unread; ?></span>
+                    <?php endif; ?>
+                </button>
+                <div class="admin-chat-dropdown" id="adminChatDropdown">
+                    <h4>Chat with Operator</h4>
+                    <div class="admin-chat-list" id="adminChatList">
+                        <?php
+                        if($user_id) {
+                            if(!empty($user_chats)):
+                                foreach($user_chats as $chat):
+                        ?>
+                            <a href="adminchat.php?chat_id=<?php echo $chat['chat_id']; ?>" class="admin-chat-item">
+                                <div class="admin-chat-avatar">
+                                    <?php echo strtoupper(substr($chat['full_name'], 0, 1)); ?>
+                                </div>
+                                <div class="admin-chat-info">
+                                    <span class="admin-chat-name"><?php echo htmlspecialchars($chat['full_name']); ?></span>
+                                    <span class="admin-chat-preview"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages yet', 0, 30)); ?></span>
+                                </div>
+                                <div class="admin-chat-time">
+                                    <?php if(isset($chat['last_message_time'])): ?>
+                                        <?php 
+                                        // Handle SQL Server datetime
+                                        if($chat['last_message_time'] instanceof DateTime) {
+                                            echo $chat['last_message_time']->format('H:i');
+                                        } else {
+                                            echo date('H:i', strtotime($chat['last_message_time']));
+                                        }
+                                        ?>
+                                    <?php endif; ?>
+                                </div>
+                            </a>
+                        <?php 
+                                endforeach; 
+                        ?>
+                            <a href="adminchat.php?new=1" class="new-chat-btn">Start New Chat with Different Operator</a>
+                        <?php
+                            else:
+                                $admins = getAvailableAdmins($conn);
+                                if(!empty($admins)):
+                        ?>
+                            <div class="admin-select-list">
+                                <?php foreach($admins as $admin): ?>
+                                <a href="adminchat.php?start_chat=<?php echo $admin['user_id']; ?>" class="admin-select-item">
+                                    <div class="admin-chat-avatar">
+                                        <?php echo strtoupper(substr($admin['full_name'], 0, 1)); ?>
+                                    </div>
+                                    <span class="admin-select-name"><?php echo htmlspecialchars($admin['full_name']); ?></span>
+                                </a>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php
+                                else:
+                        ?>
+                            <div style="text-align: center; color: #a0aec0; padding: 20px;">
+                                No admins available
+                            </div>
+                        <?php
+                                endif;
+                            endif;
+                        }
+                        ?>
+                    </div>
+                    <?php if($user_unread > 0): ?>
+                        <div class="chat-notification">
+                            You have <?php echo $user_unread; ?> unread message(s)
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+        </div>
+            
+        <?php 
+        $totalContacts = count($allNumbers);
+        $divisionsCount = 0; $departmentsCount = 0; $unitsCount = 0; $officesCount = 0; 
+        $activeCount = 0; $decommissionedCount = 0;
+        
+        foreach($allNumbers as $number){
+            switch($number['unit_type']){
+                case 'Division': $divisionsCount++; break;
+                case 'Department': $departmentsCount++; break;
+                case 'Unit': $unitsCount++; break;
+                case 'Office': $officesCount++; break;
+            }
+            if(isset($number['status'])){
+                if($number['status']==='active') $activeCount++;
+                elseif($number['status']==='decommissioned') $decommissionedCount++;
+            }
+        }
+        
+        // Include user numbers in the stats
+        $userNumbersCount = count($user_numbers);
+        ?>
+        <div class="stats-summary">
+            <div class="stat-item"><div class="stat-value"><?php echo $totalContacts; ?></div><div class="stat-label">Total Contacts</div></div>
+            <div class="stat-item"><div class="stat-value"><?php echo $officesCount; ?></div><div class="stat-label">Offices</div></div>
+            <div class="stat-item"><div class="stat-value"><?php echo $activeCount; ?></div><div class="stat-label">Active</div></div>
+            <div class="stat-item"><div class="stat-value"><?php echo $decommissionedCount; ?></div><div class="stat-label">Decommissioned</div></div>
+            <?php if($userNumbersCount > 0): ?>
+            <div class="stat-item"><div class="stat-value"><?php echo $userNumbersCount; ?></div><div class="stat-label">My Contacts</div></div>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Display user's connected numbers in a pinned section -->
+        <?php if($has_user_numbers): ?>
+        <div class="user-numbers-section">
+            <h3>
+                <span>👤</span> My Numbers
+                <span class="notification-badge"><?php echo count($user_numbers); ?></span>
+            </h3>
+            <table class="user-contact-table">
+                <thead>
+                    <tr>
+                        <th>Contact Number & Email</th>
+                        <th>Description</th>
+                        <th>Type</th>
+                        <th>Unit/Department Name</th>
+                        <th>Rating</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach($user_numbers as $contact): 
+                        $typeClass=''; 
+                        switch($contact['unit_type']){
+                            case 'Division': $typeClass='type-division'; break;
+                            case 'Department': $typeClass='type-department'; break;
+                            case 'Unit': $typeClass='type-unit'; break;
+                            case 'Office': $typeClass='type-office'; break;
+                        }
+                        $statusClass='status-active'; $statusText='Active';
+                        
+                        $avgRating = $contact['avg_rating'] ?? 0;
+                        $starHTML = '';
+                        $fullStars = floor($avgRating);
+                        $hasHalfStar = ($avgRating - $fullStars) >= 0.5;
+                        
+                        for ($i = 1; $i <= 5; $i++) {
+                            if ($i <= $fullStars) {
+                                $starHTML .= '<span class="star filled">★</span>';
+                            } elseif ($i == $fullStars + 1 && $hasHalfStar) {
+                                $starHTML .= '<span class="star filled">★</span>';
+                            } else {
+                                $starHTML .= '<span class="star">★</span>';
+                            }
+                        }
+                        
+                        $email = !empty($contact['contact_email']) ? $contact['contact_email'] : 
+                                (!empty($contact['head_user_email']) ? $contact['head_user_email'] : 'N/A');
+                    ?>
+                    <tr class="user-contact-row clickable-row" 
+                        data-id="<?php echo $contact['number_id']; ?>"
+                        data-type="<?php echo strtolower($contact['unit_type']); ?>" 
+                        data-status="active"
+                        data-rating="<?php echo $avgRating; ?>">
+                            <td class="contact-number">
+                                <?php echo htmlspecialchars($contact['contact_number']); ?>
+                                <span class="contact-email">
+                                    <?php echo htmlspecialchars($email); ?>
+                                </span>
+                                <span class="user-badge">YOU</span>
+                            </td>
+                            <td class="contact-description"><?php echo htmlspecialchars($contact['description']); ?></td>
+                            <td>
+                                <span class="unit-type <?php echo $typeClass;?>"><?php echo $contact['unit_type'];?></span>
+                            </td>
+                            <td>
+                                <?php echo htmlspecialchars($contact['unit_name']);?>
+                                <?php if($contact['parent_division'] && $contact['unit_type']!='Division'): ?>
+                                    <div class="parent-info">Under: <?php echo htmlspecialchars($contact['parent_division']);?></div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <div class="rating-container">
+                                    <div class="star-rating-small">
+                                        <?php echo $starHTML; ?>
+                                    </div>
+                                    <span class="rating-value"><?php echo number_format($avgRating, 1); ?> (<?php echo $contact['total_feedbacks']; ?>)</span>
+                                </div>
+                            </td>
+                            <td><span class="status-badge status-user-active">Active</span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <div style="font-size: 12px; color: #4b5563; text-align: right; padding-top: 10px;">
+                These are the contact numbers assigned to your account
+            </div>
+        </div>
+        <?php endif; ?>
+        
+        <?php if(!empty($head_contacts)): ?>
+        <div class="head-contact-section">
+            <h3>
+                <span class="pinned-icon">📌</span> My Numbers
+                <?php if($total_head_unread > 0): ?>
+                    <span class="notification-badge"><?php echo $total_head_unread; ?> unread</span>
+                <?php endif; ?>
+            </h3>
+            <table class="head-contact-table">
+                <thead>
+                    <tr>
+                        <th>Contact Number & Email</th>
+                        <th>Description</th>
+                        <th>Type</th>
+                        <th>Unit/Department Name</th>
+                        <th>Rating</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach($head_contacts as $contact): 
+                        $typeClass=''; 
+                        switch($contact['unit_type']){
+                            case 'Division': $typeClass='type-division'; break;
+                            case 'Department': $typeClass='type-department'; break;
+                            case 'Unit': $typeClass='type-unit'; break;
+                            case 'Office': $typeClass='type-office'; break;
+                        }
+                        $statusClass='status-head-active'; $statusText='Active';
+                        
+                        $avgRating = $contact['avg_rating'] ?? 0;
+                        $starHTML = '';
+                        $fullStars = floor($avgRating);
+                        $hasHalfStar = ($avgRating - $fullStars) >= 0.5;
+                        
+                        for ($i = 1; $i <= 5; $i++) {
+                            if ($i <= $fullStars) {
+                                $starHTML .= '<span class="star filled">★</span>';
+                            } elseif ($i == $fullStars + 1 && $hasHalfStar) {
+                                $starHTML .= '<span class="star filled">★</span>';
+                            } else {
+                                $starHTML .= '<span class="star">★</span>';
+                            }
+                        }
+                        
+                        $contact_unread = getHeadUnreadForContact($conn, $user_id, $contact['number_id']);
+                        
+                        $email = !empty($contact['email']) ? $contact['email'] : 
+                                (!empty($contact['head_user_email']) ? $contact['head_user_email'] : 'N/A');
+                    ?>
+                    <tr class="head-contact-row clickable-row" 
+                        data-id="<?php echo $contact['number_id']; ?>"
+                        data-type="<?php echo strtolower($contact['unit_type']); ?>" 
+                        data-status="active"
+                        data-rating="<?php echo $avgRating; ?>">
+                            <td class="contact-number">
+                                <?php echo htmlspecialchars($contact['contact_number']); ?>
+                                <span class="contact-email">
+                                    <?php echo htmlspecialchars($email); ?>
+                                </span>
+                                <?php if($contact_unread > 0): ?>
+                                    <span class="unread-badge"><?php echo $contact_unread; ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="contact-description"><?php echo htmlspecialchars($contact['description']); ?></td>
+                            <td>
+                                <span class="unit-type <?php echo $typeClass;?>"><?php echo $contact['unit_type'];?></span>
+                                <span class="head-badge">HEAD</span>
+                            </td>
+                            <td>
+                                <?php echo htmlspecialchars($contact['unit_name']);?>
+                            </td>
+                            <td>
+                                <div class="rating-container">
+                                    <div class="star-rating-small">
+                                        <?php echo $starHTML; ?>
+                                    </div>
+                                    <span class="rating-value"><?php echo number_format($avgRating, 1); ?> (<?php echo $contact['total_feedbacks']; ?>)</span>
+                                </div>
+                            </td>
+                            <td><span class="status-badge <?php echo $statusClass;?>"><?php echo $statusText;?></span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+        
+        <div class="regular-contact-section">
+            <h3><?php echo $has_user_numbers ? 'Other Contacts' : 'All Contacts'; ?></h3>
+            <div class="search-filter">
+                <input type="text" id="searchInput" placeholder="Search by number, head, description, unit, or status..." onkeyup="filterSearch()">
+            </div>
+            
+            <div class="filter-options">
+                <div class="filter-buttons">
+                    <button class="filter-btn active" onclick="filterTable('all')">All Contacts</button>
+                    <button class="filter-btn" onclick="filterTable('division')">Divisions</button>
+                    <button class="filter-btn" onclick="filterTable('department')">Departments</button>
+                    <button class="filter-btn" onclick="filterTable('unit')">Units</button>
+                    <button class="filter-btn" onclick="filterTable('office')">Offices</button>
+                    <button class="filter-btn" onclick="filterTable('active')">Active</button>
+                    <button class="filter-btn" onclick="filterTable('decommissioned')">Decommissioned</button>
+                </div>
+                
+                <div class="sorting-options">
+                    <h4>Sort by:</h4>
+                    <div class="sort-buttons">
+                        <button class="sort-btn active" onclick="sortTable('default')">Default</button>
+                        <button class="sort-btn" onclick="sortTable('rating')">Ranking</button>
+                    </div>
+                </div>
+            </div>
+            
+            <?php if($totalContacts>0): ?>
+            <table class="contact-table" id="contacts-table">
+                <thead>
+                    <tr>
+                        <th>Contact Number & Email</th>
+                        <th>Description</th>
+                        <th>Type</th>
+                        <th>Unit/Department Name</th>
+                        <th>Rating</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="contacts-tbody">
+                    <?php foreach($regularNumbers as $contact): 
+                        $typeClass=''; 
+                        switch($contact['unit_type']){
+                            case 'Division': $typeClass='type-division'; break;
+                            case 'Department': $typeClass='type-department'; break;
+                            case 'Unit': $typeClass='type-unit'; break;
+                            case 'Office': $typeClass='type-office'; break;
+                        }
+                        $statusClass='status-inactive'; $statusText='Unknown';
+                        if(isset($contact['status'])){
+                            if($contact['status']==='active'){ $statusClass='status-active'; $statusText='Active'; }
+                            elseif($contact['status']==='decommissioned'){ $statusClass='status-decommissioned'; $statusText='Decommissioned'; }
+                        }
+                        
+                        $avgRating = $contact['avg_rating'] ?? 0;
+                        $starHTML = '';
+                        $fullStars = floor($avgRating);
+                        $hasHalfStar = ($avgRating - $fullStars) >= 0.5;
+                        
+                        for ($i = 1; $i <= 5; $i++) {
+                            if ($i <= $fullStars) {
+                                $starHTML .= '<span class="star filled">★</span>';
+                            } elseif ($i == $fullStars + 1 && $hasHalfStar) {
+                                $starHTML .= '<span class="star filled">★</span>';
+                            } else {
+                                $starHTML .= '<span class="star">★</span>';
+                            }
+                        }
+                        
+                        $email = !empty($contact['contact_email']) ? $contact['contact_email'] : 
+                                (!empty($contact['head_user_email']) ? $contact['head_user_email'] : 'N/A');
+                    ?>
+                    <tr class="contact-row <?php echo isLoggedIn() ? 'clickable-row' : 'non-clickable'; ?>" 
+                        <?php if(isLoggedIn()): ?>
+                            data-id="<?php echo $contact['number_id']; ?>"
+                        <?php endif; ?>
+                        data-type="<?php echo strtolower($contact['unit_type']); ?>" 
+                        data-status="<?php echo isset($contact['status'])?$contact['status']:'unknown';?>"
+                        data-rating="<?php echo $avgRating; ?>">
+                            <td class="contact-number">
+                                <?php echo htmlspecialchars($contact['contact_number']); ?>
+                                <span class="contact-email">
+                                    <?php echo htmlspecialchars($email); ?>
+                                </span>
+                            </td>
+                            <td class="contact-description"><?php echo htmlspecialchars($contact['description']); ?></td>
+                            <td><span class="unit-type <?php echo $typeClass;?>"><?php echo $contact['unit_type'];?></span></td>
+                            <td>
+                                <?php echo htmlspecialchars($contact['unit_name']);?>
+                                <?php if($contact['parent_division'] && $contact['unit_type']!='Division'): ?>
+                                    <div class="parent-info">Under: <?php echo htmlspecialchars($contact['parent_division']);?></div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <div class="rating-container">
+                                    <div class="star-rating-small">
+                                        <?php echo $starHTML; ?>
+                                    </div>
+                                    <span class="rating-value"><?php echo number_format($avgRating, 1); ?> (<?php echo $contact['total_feedbacks']; ?>)</span>
+                                </div>
+                            </td>
+                            <td><span class="status-badge <?php echo $statusClass;?>"><?php echo $statusText;?></span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php else: ?>
+                <div class="no-contacts">
+                    No contact numbers have been added yet.
+                    <?php if(isLoggedIn()): ?><a href="createpage.php">Add your first contact</a><?php endif; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<div class="footer">
+    © 2026 Intercom Directory. All rights reserved.<br>
+    Developed by TNTS Programming Students JT.DP.RR
+</div>
+
+<script>
+let currentSort = 'default';
+let originalRows = [];
+let currentFilter = 'all';
+
+// Function to set active navigation based on current page
+function setActiveNav() {
+    const currentPage = window.location.pathname.split('/').pop();
+    const navLinks = document.querySelectorAll('.nav li a');
+    
+    navLinks.forEach(link => {
+        const href = link.getAttribute('href');
+        if (href === currentPage) {
+            link.classList.add('active');
+        } else {
+            link.classList.remove('active');
+        }
+    });
+}
+
+function filterSearch(){
+    const input = document.getElementById('searchInput').value.toLowerCase();
+    const rows = document.querySelectorAll('.contact-row, .head-contact-row, .user-contact-row');
+    
+    rows.forEach(row => {
+        let match = false;
+        const cells = row.querySelectorAll('td');
+        
+        cells.forEach(td => {
+            if(td.innerText.toLowerCase().includes(input)) match = true;
+        });
+        
+        if (match && passesCurrentFilter(row)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function passesCurrentFilter(row) {
+    // User numbers should always be visible when filtering
+    if (row.classList.contains('user-contact-row')) {
+        return true;
+    }
+    
+    if (row.classList.contains('head-contact-row')) {
+        return true;
+    }
+    
+    const rowType = row.getAttribute('data-type');
+    const rowStatus = row.getAttribute('data-status');
+    
+    if (currentFilter === 'all') return true;
+    if (currentFilter === 'active' || currentFilter === 'decommissioned') {
+        return rowStatus === currentFilter;
+    }
+    return rowType === currentFilter;
+}
+
+function filterTable(type){
+    currentFilter = type;
+    const buttons = document.querySelectorAll('.filter-btn');
+    
+    buttons.forEach(btn => btn.classList.remove('active'));
+    buttons.forEach(btn => {
+        if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes("'" + type + "'")) {
+            btn.classList.add('active');
+        }
+    });
+
+    const rows = document.querySelectorAll('.contact-row, .head-contact-row, .user-contact-row');
+    rows.forEach(row => {
+        if (passesCurrentFilter(row)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+    
+    applySort(currentSort);
+}
+
+function sortTable(sortType){
+    const sortButtons = document.querySelectorAll('.sort-btn');
+    sortButtons.forEach(btn => btn.classList.remove('active'));
+    
+    sortButtons.forEach(btn => {
+        if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes("'" + sortType + "'")) {
+            btn.classList.add('active');
+        }
+    });
+    
+    currentSort = sortType;
+    applySort(sortType);
+}
+
+function applySort(sortType){
+    const tbody = document.getElementById('contacts-tbody');
+    const visibleRows = Array.from(tbody.querySelectorAll('.contact-row:not([style*="display: none"])'));
+    
+    if (sortType === 'default') {
+        const allRows = Array.from(tbody.querySelectorAll('.contact-row'));
+        
+        const positionMap = new Map();
+        originalRows.forEach((row, index) => {
+            const id = row.getAttribute('data-id');
+            if (id) positionMap.set(id, index);
+        });
+        
+        visibleRows.sort((a, b) => {
+            const idA = a.getAttribute('data-id');
+            const idB = b.getAttribute('data-id');
+            const posA = positionMap.get(idA) || 0;
+            const posB = positionMap.get(idB) || 0;
+            return posA - posB;
+        });
+        
+        visibleRows.forEach(row => tbody.appendChild(row));
+        return;
+    }
+    
+    visibleRows.sort((a, b) => {
+        switch(sortType){
+            case 'rating':
+                const ratingA = parseFloat(a.getAttribute('data-rating'));
+                const ratingB = parseFloat(b.getAttribute('data-rating'));
+                return ratingB - ratingA;
+            default:
+                return 0;
+        }
+    });
+    
+    visibleRows.forEach(row => tbody.appendChild(row));
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Set active navigation
+    setActiveNav();
+    
+    const tbody = document.getElementById('contacts-tbody');
+    originalRows = Array.from(tbody.querySelectorAll('.contact-row'));
+    
+    const clickableRows = document.querySelectorAll('.clickable-row');
+    clickableRows.forEach(row => {
+        row.addEventListener('click', function(e) {
+            // Don't trigger click if clicking on a link inside the row
+            if (e.target.tagName === 'A') return;
+            const contactId = this.getAttribute('data-id');
+            window.location.href = `numpage.php?id=${contactId}`;
+        });
+    });
+    
+    tbody.addEventListener('click', function(e) {
+        const row = e.target.closest('.clickable-row');
+        if (row) {
+            // Don't trigger click if clicking on a link inside the row
+            if (e.target.tagName === 'A') return;
+            const contactId = row.getAttribute('data-id');
+            window.location.href = `numpage.php?id=${contactId}`;
+        }
+    });
+    
+    const headTable = document.querySelector('.head-contact-table');
+    if(headTable) {
+        headTable.addEventListener('click', function(e) {
+            const row = e.target.closest('.clickable-row');
+            if (row) {
+                // Don't trigger click if clicking on a link inside the row
+                if (e.target.tagName === 'A') return;
+                const contactId = row.getAttribute('data-id');
+                window.location.href = `numpage.php?id=${contactId}`;
+            }
+        });
+    }
+    
+    const userTable = document.querySelector('.user-contact-table');
+    if(userTable) {
+        userTable.addEventListener('click', function(e) {
+            const row = e.target.closest('.clickable-row');
+            if (row) {
+                // Don't trigger click if clicking on a link inside the row
+                if (e.target.tagName === 'A') return;
+                const contactId = row.getAttribute('data-id');
+                window.location.href = `numpage.php?id=${contactId}`;
+            }
+        });
+    }
+    
+    // Click outside dropdowns to close them
+    document.addEventListener('click', function(e) {
+        const chatBtn = document.getElementById('adminChatBtn');
+        const dropdown = document.getElementById('adminChatDropdown');
+        
+        if(chatBtn && dropdown) {
+            if(!chatBtn.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.style.opacity = '0';
+                dropdown.style.visibility = 'hidden';
+                dropdown.style.transform = 'translateY(-10px)';
+            }
+        }
+        
+        const adminBtn = document.getElementById('adminOnlineBtn');
+        const adminDropdown = document.getElementById('adminDropdown');
+        
+        if(adminBtn && adminDropdown) {
+            if(!adminBtn.contains(e.target) && !adminDropdown.contains(e.target)) {
+                adminDropdown.style.opacity = '0';
+                adminDropdown.style.visibility = 'hidden';
+                adminDropdown.style.transform = 'translateY(-10px)';
+            }
+        }
+
+        const notificationBtn = document.getElementById('adminNotificationBtn');
+        const notificationDropdown = document.getElementById('notificationDropdown');
+        
+        if(notificationBtn && notificationDropdown) {
+            if(!notificationBtn.contains(e.target) && !notificationDropdown.contains(e.target)) {
+                notificationDropdown.style.opacity = '0';
+                notificationDropdown.style.visibility = 'hidden';
+                notificationDropdown.style.transform = 'translateY(-10px)';
+            }
+        }
+    });
+    
+    const chatBtn = document.getElementById('adminChatBtn');
+    const chatDropdown = document.getElementById('adminChatDropdown');
+    
+    if(chatBtn && chatDropdown) {
+        chatBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if(chatDropdown.style.opacity === '1') {
+                chatDropdown.style.opacity = '0';
+                chatDropdown.style.visibility = 'hidden';
+                chatDropdown.style.transform = 'translateY(-10px)';
+            } else {
+                chatDropdown.style.opacity = '1';
+                chatDropdown.style.visibility = 'visible';
+                chatDropdown.style.transform = 'translateY(0)';
+            }
+        });
+    }
+    
+    const adminBtn = document.getElementById('adminOnlineBtn');
+    const adminDropdown = document.getElementById('adminDropdown');
+    
+    if(adminBtn && adminDropdown) {
+        adminBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if(adminDropdown.style.opacity === '1') {
+                adminDropdown.style.opacity = '0';
+                adminDropdown.style.visibility = 'hidden';
+                adminDropdown.style.transform = 'translateY(-10px)';
+            } else {
+                adminDropdown.style.opacity = '1';
+                adminDropdown.style.visibility = 'visible';
+                adminDropdown.style.transform = 'translateY(0)';
+            }
+        });
+    }
+
+    const notificationBtn = document.getElementById('adminNotificationBtn');
+    const notificationDropdown = document.getElementById('notificationDropdown');
+    
+    if(notificationBtn && notificationDropdown) {
+        notificationBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if(notificationDropdown.style.opacity === '1') {
+                notificationDropdown.style.opacity = '0';
+                notificationDropdown.style.visibility = 'hidden';
+                notificationDropdown.style.transform = 'translateY(-10px)';
+            } else {
+                notificationDropdown.style.opacity = '1';
+                notificationDropdown.style.visibility = 'visible';
+                notificationDropdown.style.transform = 'translateY(0)';
+            }
+        });
+    }
+});
+
+setTimeout(() => {
+    console.log('Auto-refreshing page...');
+    location.reload();
+}, 60000);
+
+function checkAdminNotifications() {
+    fetch('check_admin_notifications.php')
+        .then(response => response.json())
+        .then(data => {
+            const badge = document.querySelector('.notification-bell-badge');
+            const headerBadge = document.querySelector('.nav-notification-badge');
+            const headerCount = document.querySelector('.notification-header h4');
+            
+            if(data.count > 0) {
+                if(badge) {
+                    badge.textContent = data.count;
+                    badge.style.display = 'inline-block';
+                }
+                if(headerBadge) {
+                    headerBadge.textContent = data.count;
+                    headerBadge.style.display = 'inline-block';
+                }
+                if(headerCount) {
+                    headerCount.textContent = `📨 New Chat Requests (${data.count})`;
+                }
+                
+                if(data.count > parseInt(badge?.textContent || 0)) {
+                    showNotificationToast(data.latest?.user_name || 'New chat request');
+                }
+            } else {
+                if(badge) badge.style.display = 'none';
+                if(headerBadge) headerBadge.style.display = 'none';
+                if(headerCount) headerCount.textContent = '📨 New Chat Requests (0)';
+            }
+        })
+        .catch(error => console.error('Error checking notifications:', error));
+}
+
+function showNotificationToast(userName) {
+    if(Notification.permission === "granted") {
+        new Notification("New Chat Request", {
+            body: `${userName} wants to chat with you`,
+            icon: "hospitalLogo.png"
+        });
+    }
+}
+
+if (Notification.permission === "default") {
+    Notification.requestPermission();
+}
+
+setInterval(checkAdminNotifications, 10000);
+</script>
 </body>
 </html>
