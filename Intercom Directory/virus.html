@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Birthday Party Invitation System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Comic Sans MS', 'Segoe UI', cursive, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #ffeaa7);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 25px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 1200px;
+            overflow: hidden;
+            border: 8px solid #ffcc5c;
+            position: relative;
+        }
+
+        .container::before {
+            content: "🎉";
+            font-size: 40px;
+            position: absolute;
+            top: -20px;
+            left: -20px;
+            animation: bounce 2s infinite;
+        }
+
+        .container::after {
+            content: "🎂";
+            font-size: 40px;
+            position: absolute;
+            bottom: -20px;
+            right: -20px;
+            animation: bounce 2s infinite 0.5s;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        header {
+            background: linear-gradient(to right, #ff6b6b, #ffcc5c);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #ffcc5c;
+            animation: fall 5s linear infinite;
+        }
+
+        @keyframes fall {
+            to { transform: translateY(100vh) rotate(360deg); }
+        }
+
+        header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 3px 3px 0 #ff6b6b;
+        }
+
+        .birthday-info {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .info-card {
+            background: white;
+            padding: 15px 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            min-width: 180px;
+        }
+
+        .info-card h3 {
+            color: #ff6b6b;
+            margin-bottom: 5px;
+        }
+
+        .info-card p {
+            color: #333;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 40px;
+        }
+
+        @media (max-width: 900px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .invitation-card {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border: 5px solid #ffcc5c;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .invitation-card::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            opacity: 0.3;
+        }
+
+        .invitation-card h2 {
+            color: #ff6b6b;
+            margin-bottom: 25px;
+            font-size: 2.2rem;
+            text-align: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #555;
+            font-size: 1.1rem;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 15px 20px;
+            border: 3px solid #ffcc5c;
+            border-radius: 12px;
+            font-size: 1rem;
+            background: white;
+            transition: all 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #ff6b6b;
+            box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.2);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 18px;
+            border: none;
+            border-radius: 15px;
+            font-size: 1.3rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .generate-btn {
+            background: linear-gradient(to right, #ff6b6b, #ffcc5c);
+            color: white;
+            box-shadow: 0 8px 20px rgba(255, 107, 107, 0.3);
+        }
+
+        .generate-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 25px rgba(255, 107, 107, 0.4);
+        }
+
+        .validate-btn {
+            background: linear-gradient(to right, #4ecdc4, #45b7d1);
+            color: white;
+            box-shadow: 0 8px 20px rgba(78, 205, 196, 0.3);
+        }
+
+        .validate-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 25px rgba(78, 205, 196, 0.4);
+        }
+
+        .copy-btn {
+            background: #96ceb4;
+            color: white;
+            margin-top: 20px;
+        }
+
+        .copy-btn:hover {
+            background: #88c1a3;
+        }
+
+        .copy-btn.success {
+            background: #4ecdc4;
+        }
+
+        .result-box {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            margin-top: 30px;
+            border-left: 8px solid #ffcc5c;
+            position: relative;
+            z-index: 1;
+        }
+
+        .result-box h3 {
+            color: #ff6b6b;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .invitation-code {
+            background: linear-gradient(45deg, #ff6b6b, #ffcc5c);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 1.8rem;
+            font-weight: bold;
+            text-align: center;
+            letter-spacing: 3px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 0 rgba(0,0,0,0.1);
+            word-break: break-all;
+        }
+
+        .message {
+            padding: 20px;
+            border-radius: 12px;
+            font-weight: bold;
+            text-align: center;
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 5px solid #28a745;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 5px solid #dc3545;
+        }
+
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 5px solid #17a2b8;
+        }
+
+        .guests-list {
+            margin-top: 30px;
+            padding-top: 25px;
+            border-top: 3px dashed #ffcc5c;
+        }
+
+        .guests-list h3 {
+            color: #ff6b6b;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #guest-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+
+        #guest-table th {
+            background: #ffcc5c;
+            color: white;
+            padding: 15px;
+            text-align: left;
+        }
+
+        #guest-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        #guest-table tr:hover {
+            background: #fff9e6;
+        }
+
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        .status-confirmed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        footer {
+            background: #ffcc5c;
+            color: #333;
+            text-align: center;
+            padding: 20px;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .party-theme {
+            background: #ffeaa7;
+            padding: 15px;
+            border-radius: 12px;
+            margin-top: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .theme-selector {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .theme-btn {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .theme-btn.active {
+            transform: scale(1.1);
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        }
+
+        .invitation-preview {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-top: 20px;
+            border: 3px dashed #ffcc5c;
+            text-align: center;
+            font-size: 1.1rem;
+        }
+
+        .invitation-preview h4 {
+            color: #ff6b6b;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎂 Birthday Party Invitation System 🎉</h1>
+            <div class="birthday-info">
+                <div class="info-card">
+                    <h3>📅 Date</h3>
+                    <p id="party-date">December 25, 2024</p>
+                </div>
+                <div class="info-card">
+                    <h3>🕒 Time</h3>
+                    <p id="party-time">6:00 PM - 11:00 PM</p>
+                </div>
+                <div class="info-card">
+                    <h3>📍 Location</h3>
+                    <p id="party-location">123 Party Street</p>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Generate Invitation Card -->
+            <div class="invitation-card">
+                <h2>🎁 Generate Invitation</h2>
+                
+                <div class="form-group">
+                    <label for="guest-name">👤 Guest Name:</label>
+                    <input type="text" id="guest-name" placeholder="Enter guest's full name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="guest-email">📧 Guest Email:</label>
+                    <input type="email" id="guest-email" placeholder="guest@example.com">
+                </div>
+                
+                <div class="form-group">
+                    <label for="invite-type">🎯 Invitation Type:</label>
+                    <select id="invite-type">
+                        <option value="VIP">VIP Guest (Gold)</option>
+                        <option value="Family">Family Member</option>
+                        <option value="Friend">Close Friend</option>
+                        <option value="Colleague">Colleague</option>
+                    </select>
+                </div>
+                
+                <div class="party-theme">
+                    <label>🎨 Party Theme:</label>
+                    <div class="theme-selector">
+                        <button class="theme-btn" data-theme="balloons" style="background:#ff6b6b;color:white;">🎈 Balloons</button>
+                        <button class="theme-btn active" data-theme="birthday" style="background:#ffcc5c;color:#333;">🎂 Birthday</button>
+                        <button class="theme-btn" data-theme="disco" style="background:#4ecdc4;color:white;">🪩 Disco</button>
+                        <button class="theme-btn" data-theme="space" style="background:#45b7d1;color:white;">🚀 Space</button>
+                    </div>
+                </div>
+                
+                <button id="generate-btn" class="btn generate-btn">
+                    🎊 Generate Invitation Code
+                </button>
+                
+                <div class="result-box">
+                    <h3>Your Invitation:</h3>
+                    <div class="invitation-preview">
+                        <h4>🎉 YOU'RE INVITED! 🎉</h4>
+                        <p>Dear <span id="preview-name">[Guest Name]</span>,</p>
+                        <p>You're invited to celebrate with us!</p>
+                        <p>Your unique invitation code is:</p>
+                    </div>
+                    <div class="invitation-code" id="generated-code">
+                        Click "Generate" above
+                    </div>
+                    <button id="copy-btn" class="btn copy-btn" disabled>
+                        📋 Copy Invitation Code
+                    </button>
+                </div>
+            </div>
+
+            <!-- Validate & RSVP Card -->
+            <div class="invitation-card">
+                <h2>✅ RSVP & Validate</h2>
+                
+                <div class="form-group">
+                    <label for="validate-input">🔑 Enter Invitation Code:</label>
+                    <input type="text" id="validate-input" placeholder="Paste your invitation code here">
+                </div>
+                
+                <div class="form-group">
+                    <label for="rsvp-status">✍️ Your Response:</label>
+                    <select id="rsvp-status">
+                        <option value="attending">🎉 Attending!</option>
+                        <option value="maybe">🤔 Maybe</option>
+                        <option value="not-attending">😢 Can't Make It</option>
+                    </select>
+                </div>
+                
+                <button id="validate-btn" class="btn validate-btn">
+                    ✅ Submit RSVP
+                </button>
+                
+                <div class="result-box">
+                    <h3>Invitation Status:</h3>
+                    <div class="message info" id="validation-message">
+                        Enter your code and RSVP status
+                    </div>
+                    
+                    <div class="guests-list">
+                        <h3>👥 Guest List (<span id="total-guests">0</span> guests)</h3>
+                        <table id="guest-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Code</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="guest-list">
+                                <tr>
+                                    <td colspan="3" style="text-align:center;">No guests yet</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <button id="clear-all" class="btn" style="background:#ff6b6b;color:white;margin-top:15px;">
+                            🗑️ Clear All Guests
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>🎈 Birthday Party Invitation System | All codes are unique and secure | Made with ❤️</p>
+            <p>🎁 Share your invitation code with friends to join the party!</p>
+        </footer>
+    </div>
+
+    <script>
+        // DOM Elements
+        const generateBtn = document.getElementById('generate-btn');
+        const validateBtn = document.getElementById('validate-btn');
+        const copyBtn = document.getElementById('copy-btn');
+        const clearBtn = document.getElementById('clear-all');
+        const guestNameInput = document.getElementById('guest-name');
+        const guestEmailInput = document.getElementById('guest-email');
+        const inviteTypeSelect = document.getElementById('invite-type');
+        const validateInput = document.getElementById('validate-input');
+        const rsvpSelect = document.getElementById('rsvp-status');
+        const generatedCodeDisplay = document.getElementById('generated-code');
+        const validationMessage = document.getElementById('validation-message');
+        const guestList = document.getElementById('guest-list');
+        const totalGuests = document.getElementById('total-guests');
+        const previewName = document.getElementById('preview-name');
+        const themeButtons = document.querySelectorAll('.theme-btn');
+        const partyDate = document.getElementById('party-date');
+        const partyTime = document.getElementById('party-time');
+        const partyLocation = document.getElementById('party-location');
+
+        // Storage for invitations
+        let invitations = JSON.parse(localStorage.getItem('birthdayInvitations')) || [];
+        let partyTheme = 'birthday';
+
+        // Initialize
+        updateGuestList();
+        createConfetti();
+        setRandomPartyDetails();
+
+        // Set random party details for demo
+        function setRandomPartyDetails() {
+            const dates = ['December 25, 2024', 'January 15, 2025', 'February 14, 2025', 'March 8, 2025'];
+            const times = ['6:00 PM - 11:00 PM', '7:00 PM - 12:00 AM', '5:00 PM - 10:00 PM', '8:00 PM - 1:00 AM'];
+            const locations = ['123 Party Street', '456 Celebration Ave', '789 Fun Boulevard', '101 Happy Lane'];
+            
+            partyDate.textContent = dates[Math.floor(Math.random() * dates.length)];
+            partyTime.textContent = times[Math.floor(Math.random() * times.length)];
+            partyLocation.textContent = locations[Math.floor(Math.random() * locations.length)];
+        }
+
+        // Create confetti effect
+        function createConfetti() {
+            const header = document.querySelector('header');
+            for (let i = 0; i < 50; i++) {
+                const confetti = document.createElement('div');
+                confetti.className = 'confetti';
+                confetti.style.left = Math.random() * 100 + '%';
+                confetti.style.animationDelay = Math.random() * 5 + 's';
+                confetti.style.backgroundColor = ['#ff6b6b', '#ffcc5c', '#4ecdc4', '#45b7d1', '#96ceb4'][Math.floor(Math.random() * 5)];
+                confetti.style.width = Math.random() * 10 + 5 + 'px';
+                confetti.style.height = confetti.style.width;
+                header.appendChild(confetti);
+            }
+        }
+
+        // Theme selection
+        themeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                themeButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                partyTheme = btn.dataset.theme;
+                
+                // Update colors based on theme
+                const colors = {
+                    balloons: ['#ff6b6b', '#ffcc5c'],
+                    birthday: ['#ff6b6b', '#4ecdc4'],
+                    disco: ['#4ecdc4', '#45b7d1'],
+                    space: ['#45b7d1', '#96ceb4']
+                };
+                
+                document.documentElement.style.setProperty('--theme-primary', colors[partyTheme][0]);
+                document.documentElement.style.setProperty('--theme-secondary', colors[partyTheme][1]);
+            });
+        });
+
+        // Update name preview
+        guestNameInput.addEventListener('input', () => {
+            previewName.textContent = guestNameInput.value || '[Guest Name]';
+        });
+
+        // Generate invitation code
+        generateBtn.addEventListener('click', () => {
+            const name = guestNameInput.value.trim();
+            const email = guestEmailInput.value.trim();
+            const type = inviteTypeSelect.value;
+            
+            if (!name || !email) {
+                validationMessage.textContent = '⚠️ Please enter both name and email!';
+                validationMessage.className = 'message error';
+                return;
+            }
+            
+            if (!validateEmail(email)) {
+                validationMessage.textContent = '⚠️ Please enter a valid email address!';
+                validationMessage.className = 'message error';
+                return;
+            }
+            
+            // Generate unique invitation code
+            const code = generateInvitationCode(name, type);
+            
+            // Display the code
+            generatedCodeDisplay.textContent = code;
+            
+            // Enable copy button
+            copyBtn.disabled = false;
+            
+            // Create invitation object
+            const invitation = {
+                id: Date.now(),
+                code: code,
+                name: name,
+                email: email,
+                type: type,
+                theme: partyTheme,
+                status: 'pending',
+                rsvp: 'pending',
+                generated: new Date().toLocaleString(),
+                partyDate: partyDate.textContent,
+                partyTime: partyTime.textContent,
+                partyLocation: partyLocation.textContent
+            };
+            
+            // Store the invitation
+            invitations.unshift(invitation);
+            
+            // Save to localStorage
+            localStorage.setItem('birthdayInvitations', JSON.stringify(invitations));
+            
+            // Update UI
+            updateGuestList();
+            
+            // Show success message
+            validationMessage.textContent = `🎉 Invitation created for ${name}! Share the code with them.`;
+            validationMessage.className = 'message success';
+            
+            // Clear form
+            guestNameInput.value = '';
+            guestEmailInput.value = '';
+        });
+
+        // Copy to clipboard
+        copyBtn.addEventListener('click', async () => {
+            const code = generatedCodeDisplay.textContent;
+            
+            try {
+                await navigator.clipboard.writeText(code);
+                copyBtn.textContent = '✅ Copied!';
+                copyBtn.classList.add('success');
+                
+                // Reset button after 2 seconds
+                setTimeout(() => {
+                    copyBtn.textContent = '📋 Copy Invitation Code';
+                    copyBtn.classList.remove('success');
+                }, 2000);
+            } catch (err) {
+                alert('Failed to copy: ' + err);
+            }
+        });
+
+        // Validate and RSVP
+        validateBtn.addEventListener('click', () => {
+            const code = validateInput.value.trim();
+            const rsvp = rsvpSelect.value;
+            
+            if (!code) {
+                validationMessage.textContent = '⚠️ Please enter your invitation code!';
+                validationMessage.className = 'message error';
+                return;
+            }
+            
+            // Find invitation
+            const invitationIndex = invitations.findIndex(inv => inv.code === code);
+            
+            if (invitationIndex === -1) {
+                validationMessage.textContent = '❌ Invalid invitation code!';
+                validationMessage.className = 'message error';
+                return;
+            }
+            
+            // Update RSVP status
+            invitations[invitationIndex].rsvp = rsvp;
+            invitations[invitationIndex].status = 'confirmed';
+            
+            // Save to localStorage
+            localStorage.setItem('birthdayInvitations', JSON.stringify(invitations));
+            
+            // Update UI
+            updateGuestList();
+            
+            // Show success message
+            const rsvpMessages = {
+                'attending': '🎉 Awesome! Can\'t wait to celebrate with you!',
+                'maybe': '🤔 Thanks for letting us know! Hope you can make it!',
+                'not-attending': '😢 We\'ll miss you! Thanks for letting us know.'
+            };
+            
+            validationMessage.textContent = `✅ RSVP submitted! ${rsvpMessages[rsvp]}`;
+            validationMessage.className = 'message success';
+            
+            // Clear input
+            validateInput.value = '';
+        });
+
+        // Clear all guests
+        clearBtn.addEventListener('click', () => {
+            if (confirm('Are you sure you want to clear all guests? This cannot be undone.')) {
+                invitations = [];
+                localStorage.removeItem('birthdayInvitations');
+                updateGuestList();
+                validationMessage.textContent = '✅ All guests cleared!';
+                validationMessage.className = 'message success';
+            }
+        });
+
+        // Helper functions
+        function generateInvitationCode(name, type) {
+            const prefix = type === 'VIP' ? 'VIP' : type === 'Family' ? 'FAM' : type === 'Friend' ? 'FRD' : 'COL';
+            const nameCode = name.substring(0, 3).toUpperCase();
+            const randomNum = Math.floor(1000 + Math.random() * 9000);
+            const themeCode = partyTheme.substring(0, 3).toUpperCase();
+            
+            return `${prefix}-${nameCode}-${randomNum}-${themeCode}`;
+        }
+
+        function validateEmail(email) {
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return re.test(email);
+        }
+
+        function updateGuestList() {
+            guestList.innerHTML = '';
+            
+            if (invitations.length === 0) {
+                guestList.innerHTML = `
+                    <tr>
+                        <td colspan="3" style="text-align:center;padding:30px;">
+                            No guests invited yet. Generate your first invitation!
+                        </td>
+                    </tr>
+                `;
+                totalGuests.textContent = '0';
+                return;
+            }
+            
+            // Count RSVPs
+            const attending = invitations.filter(inv => inv.rsvp === 'attending').length;
+            const maybe = invitations.filter(inv => inv.rsvp === 'maybe').length;
+            const notAttending = invitations.filter(inv => inv.rsvp === 'not-attending').length;
+            
+            totalGuests.textContent = invitations.length;
+            totalGuests.innerHTML = `${invitations.length} <small>(${attending} attending, ${maybe} maybe, ${notAttending} declined)</small>`;
+            
+            // Add guests to table
+            invitations.forEach(invitation => {
+                const row = document.createElement('tr');
+                
+                // Get emoji for type
+                const typeEmoji = {
+                    'VIP': '👑',
+                    'Family': '👨‍👩‍👧‍👦',
+                    'Friend': '👫',
+                    'Colleague': '💼'
+                }[invitation.type] || '👤';
+                
+                // Get status badge
+                let statusBadge = '⌛';
+                let statusClass = 'status-pending';
+                let statusText = 'Pending';
+                
+                if (invitation.rsvp === 'attending') {
+                    statusBadge = '✅';
+                    statusClass = 'status-confirmed';
+                    statusText = 'Attending';
+                } else if (invitation.rsvp === 'maybe') {
+                    statusBadge = '🤔';
+                    statusClass = 'status-pending';
+                    statusText = 'Maybe';
+                } else if (invitation.rsvp === 'not-attending') {
+                    statusBadge = '❌';
+                    statusClass = 'status-pending';
+                    statusText = 'Not Attending';
+                }
+                
+                row.innerHTML = `
+                    <td>
+                        <strong>${typeEmoji} ${invitation.name}</strong><br>
+                        <small>${invitation.email}</small>
+                    </td>
+                    <td><code>${invitation.code}</code></td>
+                    <td><span class="status-badge ${statusClass}">${statusBadge} ${statusText}</span></td>
+                `;
+                
+                guestList.appendChild(row);
+            });
+        }
+
+        // Add demo invitations on first load
+        if (invitations.length === 0) {
+            const demoInvitations = [
+                {
+                    id: 1,
+                    code: 'VIP-JOH-2024-BIR',
+                    name: 'John Smith',
+                    email: 'john@example.com',
+                    type: 'VIP',
+                    theme: 'birthday',
+                    status: 'confirmed',
+                    rsvp: 'attending',
+                    generated: new Date().toLocaleString(),
+                    partyDate: partyDate.textContent,
+                    partyTime: partyTime.textContent,
+                    partyLocation: partyLocation.textContent
+                },
+                {
+                    id: 2,
+                    code: 'FAM-EMI-5678-BAL',
+                    name: 'Emily Johnson',
+                    email: 'emily@family.com',
+                    type: 'Family',
+                    theme: 'balloons',
+                    status: 'confirmed',
+                    rsvp: 'maybe',
+                    generated: new Date().toLocaleString(),
+                    partyDate: partyDate.textContent,
+                    partyTime: partyTime.textContent,
+                    partyLocation: partyLocation.textContent
+                }
+            ];
+            
+            invitations = demoInvitations;
+            localStorage.setItem('birthdayInvitations', JSON.stringify(invitations));
+            updateGuestList();
+        }
+
+        // Enter key support
+        guestNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') generateBtn.click();
+        });
+        
+        guestEmailInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') generateBtn.click();
+        });
+        
+        validateInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') validateBtn.click();
+        });
+
+        // Auto-select input text on click
+        [guestNameInput, guestEmailInput, validateInput].forEach(input => {
+            input.addEventListener('click', function() {
+                this.select();
+            });
+        });
+    </script>
+</body>
+</html>

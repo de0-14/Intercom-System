@@ -1,0 +1,276 @@
+[10-Feb-2026 06:56:10 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 06:56:10 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 06:56:10 Europe/Berlin] Parsed phone numbers: Array
+(
+)
+
+[10-Feb-2026 06:56:46 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 06:56:46 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 06:56:46 Europe/Berlin] Parsed phone numbers: Array
+(
+)
+
+[10-Feb-2026 06:57:50 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 06:57:50 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 06:57:50 Europe/Berlin] Parsed phone numbers: Array
+(
+)
+
+[10-Feb-2026 07:11:17 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:11:17 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:11:18 Europe/Berlin] Parsed phone numbers: Array
+(
+)
+
+[10-Feb-2026 07:11:18 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:11:18 Europe/Berlin] phoneFieldValue: N/A
+[10-Feb-2026 07:11:18 Europe/Berlin] emailFieldValue: jhanrielm2313213123123agnaos8@gmail.com
+[10-Feb-2026 07:11:18 Europe/Berlin] combinedDescription: Department contact (Phone: Not Applicable) - Email available
+[10-Feb-2026 07:11:18 Europe/Berlin] headUserId: 5
+[10-Feb-2026 07:11:18 Europe/Berlin] headFullName: test
+[10-Feb-2026 07:11:18 Europe/Berlin] division_id_insert: NULL
+[10-Feb-2026 07:11:18 Europe/Berlin] department_id_insert: 3
+[10-Feb-2026 07:11:18 Europe/Berlin] unit_id_insert: NULL
+[10-Feb-2026 07:11:18 Europe/Berlin] office_id_insert: NULL
+[10-Feb-2026 07:12:19 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:12:19 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:12:19 Europe/Berlin] Parsed phone numbers: Array
+(
+)
+
+[10-Feb-2026 07:12:19 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:12:19 Europe/Berlin] phoneFieldValue: N/A
+[10-Feb-2026 07:12:19 Europe/Berlin] emailFieldValue: YESYESYES@gmail.com
+[10-Feb-2026 07:12:19 Europe/Berlin] combinedDescription: Office contact (Phone: Not Applicable) - Email available
+[10-Feb-2026 07:12:19 Europe/Berlin] headUserId: 2
+[10-Feb-2026 07:12:19 Europe/Berlin] headFullName: Nursing Head
+[10-Feb-2026 07:12:19 Europe/Berlin] division_id_insert: NULL
+[10-Feb-2026 07:12:19 Europe/Berlin] department_id_insert: NULL
+[10-Feb-2026 07:12:19 Europe/Berlin] unit_id_insert: NULL
+[10-Feb-2026 07:12:19 Europe/Berlin] office_id_insert: 9
+[10-Feb-2026 07:15:51 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:15:51 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:15:51 Europe/Berlin] Parsed phone numbers: Array
+(
+    [0] => Array
+        (
+            [number] => 911
+            [description] => EMERGENCY
+        )
+
+)
+
+[10-Feb-2026 07:15:51 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:15:51 Europe/Berlin] phoneFieldValue: 911
+[10-Feb-2026 07:15:51 Europe/Berlin] emailFieldValue: nursing@gmail.com
+[10-Feb-2026 07:15:51 Europe/Berlin] combinedDescription: EMERGENCY - Email available
+[10-Feb-2026 07:15:51 Europe/Berlin] headUserId: 2
+[10-Feb-2026 07:15:51 Europe/Berlin] headFullName: Nursing Head
+[10-Feb-2026 07:15:51 Europe/Berlin] division_id_insert: 7
+[10-Feb-2026 07:15:51 Europe/Berlin] department_id_insert: NULL
+[10-Feb-2026 07:15:51 Europe/Berlin] unit_id_insert: NULL
+[10-Feb-2026 07:15:51 Europe/Berlin] office_id_insert: NULL
+[10-Feb-2026 07:16:24 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:16:24 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:16:24 Europe/Berlin] Parsed phone numbers: Array
+(
+    [0] => Array
+        (
+            [number] => 199
+            [description] => BIGGER EMERGENCY
+        )
+
+)
+
+[10-Feb-2026 07:16:24 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:16:24 Europe/Berlin] phoneFieldValue: 199
+[10-Feb-2026 07:16:24 Europe/Berlin] emailFieldValue: medical@gmail.com
+[10-Feb-2026 07:16:24 Europe/Berlin] combinedDescription: BIGGER EMERGENCY - Email available
+[10-Feb-2026 07:16:24 Europe/Berlin] headUserId: 3
+[10-Feb-2026 07:16:24 Europe/Berlin] headFullName: Medical Head
+[10-Feb-2026 07:16:24 Europe/Berlin] division_id_insert: 8
+[10-Feb-2026 07:16:24 Europe/Berlin] department_id_insert: NULL
+[10-Feb-2026 07:16:24 Europe/Berlin] unit_id_insert: NULL
+[10-Feb-2026 07:16:24 Europe/Berlin] office_id_insert: NULL
+[10-Feb-2026 07:17:03 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:17:03 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:17:03 Europe/Berlin] Parsed phone numbers: Array
+(
+    [0] => Array
+        (
+            [number] => 919
+            [description] => ambot lang
+        )
+
+)
+
+[10-Feb-2026 07:17:03 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:17:03 Europe/Berlin] phoneFieldValue: 919
+[10-Feb-2026 07:17:03 Europe/Berlin] emailFieldValue: ancillary@gmail.com
+[10-Feb-2026 07:17:03 Europe/Berlin] combinedDescription: ambot lang - Email available
+[10-Feb-2026 07:17:03 Europe/Berlin] headUserId: 4
+[10-Feb-2026 07:17:03 Europe/Berlin] headFullName: Ancillary Head
+[10-Feb-2026 07:17:03 Europe/Berlin] division_id_insert: 9
+[10-Feb-2026 07:17:03 Europe/Berlin] department_id_insert: NULL
+[10-Feb-2026 07:17:03 Europe/Berlin] unit_id_insert: NULL
+[10-Feb-2026 07:17:03 Europe/Berlin] office_id_insert: NULL
+[10-Feb-2026 07:17:52 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:17:52 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:17:52 Europe/Berlin] Parsed phone numbers: Array
+(
+    [0] => Array
+        (
+            [number] => 123
+            [description] => kani
+        )
+
+    [1] => Array
+        (
+            [number] => 321
+            [description] => second option
+        )
+
+)
+
+[10-Feb-2026 07:17:52 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:17:52 Europe/Berlin] phoneFieldValue: 123, 321
+[10-Feb-2026 07:17:52 Europe/Berlin] emailFieldValue: underNursin@gmail.com
+[10-Feb-2026 07:17:52 Europe/Berlin] combinedDescription: Department contact (kani, second option) - Email available
+[10-Feb-2026 07:17:52 Europe/Berlin] headUserId: 5
+[10-Feb-2026 07:17:52 Europe/Berlin] headFullName: test
+[10-Feb-2026 07:17:52 Europe/Berlin] division_id_insert: NULL
+[10-Feb-2026 07:17:52 Europe/Berlin] department_id_insert: 4
+[10-Feb-2026 07:17:52 Europe/Berlin] unit_id_insert: NULL
+[10-Feb-2026 07:17:52 Europe/Berlin] office_id_insert: NULL
+[10-Feb-2026 07:18:34 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:18:34 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:18:34 Europe/Berlin] Parsed phone numbers: Array
+(
+    [0] => Array
+        (
+            [number] => 231
+            [description] => Justin Case
+        )
+
+)
+
+[10-Feb-2026 07:18:34 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:18:34 Europe/Berlin] phoneFieldValue: 231
+[10-Feb-2026 07:18:34 Europe/Berlin] emailFieldValue: undermed@gmail.com
+[10-Feb-2026 07:18:34 Europe/Berlin] combinedDescription: Justin Case - Email available
+[10-Feb-2026 07:18:34 Europe/Berlin] headUserId: 3
+[10-Feb-2026 07:18:34 Europe/Berlin] headFullName: Medical Head
+[10-Feb-2026 07:18:34 Europe/Berlin] division_id_insert: NULL
+[10-Feb-2026 07:18:34 Europe/Berlin] department_id_insert: 5
+[10-Feb-2026 07:18:34 Europe/Berlin] unit_id_insert: NULL
+[10-Feb-2026 07:18:34 Europe/Berlin] office_id_insert: NULL
+[10-Feb-2026 07:19:21 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:19:21 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:19:21 Europe/Berlin] Parsed phone numbers: Array
+(
+    [0] => Array
+        (
+            [number] => 3213123
+            [description] => KANI DAPATTTT
+        )
+
+    [1] => Array
+        (
+            [number] => 123123
+            [description] => Department contact
+        )
+
+)
+
+[10-Feb-2026 07:19:21 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:19:21 Europe/Berlin] phoneFieldValue: 3213123, 123123
+[10-Feb-2026 07:19:21 Europe/Berlin] emailFieldValue: bastauy@gmail.com
+[10-Feb-2026 07:19:21 Europe/Berlin] combinedDescription: Department contact (KANI DAPATTTT) - Email available
+[10-Feb-2026 07:19:21 Europe/Berlin] headUserId: 4
+[10-Feb-2026 07:19:21 Europe/Berlin] headFullName: Ancillary Head
+[10-Feb-2026 07:19:21 Europe/Berlin] division_id_insert: NULL
+[10-Feb-2026 07:19:21 Europe/Berlin] department_id_insert: 6
+[10-Feb-2026 07:19:21 Europe/Berlin] unit_id_insert: NULL
+[10-Feb-2026 07:19:21 Europe/Berlin] office_id_insert: NULL
+[10-Feb-2026 07:19:57 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:19:57 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:19:57 Europe/Berlin] Parsed phone numbers: Array
+(
+)
+
+[10-Feb-2026 07:19:57 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:19:57 Europe/Berlin] phoneFieldValue: N/A
+[10-Feb-2026 07:19:57 Europe/Berlin] emailFieldValue: test@gmail.com
+[10-Feb-2026 07:19:57 Europe/Berlin] combinedDescription: Unit contact (Phone: Not Applicable) - Email available
+[10-Feb-2026 07:19:57 Europe/Berlin] headUserId: 5
+[10-Feb-2026 07:19:57 Europe/Berlin] headFullName: test
+[10-Feb-2026 07:19:57 Europe/Berlin] division_id_insert: NULL
+[10-Feb-2026 07:19:57 Europe/Berlin] department_id_insert: NULL
+[10-Feb-2026 07:19:57 Europe/Berlin] unit_id_insert: 2
+[10-Feb-2026 07:19:57 Europe/Berlin] office_id_insert: NULL
+[10-Feb-2026 07:20:14 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[10-Feb-2026 07:20:14 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[10-Feb-2026 07:20:14 Europe/Berlin] Parsed phone numbers: Array
+(
+)
+
+[10-Feb-2026 07:20:14 Europe/Berlin] Inserting into numbers table with:
+[10-Feb-2026 07:20:14 Europe/Berlin] phoneFieldValue: N/A
+[10-Feb-2026 07:20:14 Europe/Berlin] emailFieldValue: test1@gmail.com
+[10-Feb-2026 07:20:14 Europe/Berlin] combinedDescription: Office contact (Phone: Not Applicable) - Email available
+[10-Feb-2026 07:20:14 Europe/Berlin] headUserId: 14
+[10-Feb-2026 07:20:14 Europe/Berlin] headFullName: testestest
+[10-Feb-2026 07:20:14 Europe/Berlin] division_id_insert: NULL
+[10-Feb-2026 07:20:14 Europe/Berlin] department_id_insert: NULL
+[10-Feb-2026 07:20:14 Europe/Berlin] unit_id_insert: NULL
+[10-Feb-2026 07:20:14 Europe/Berlin] office_id_insert: 10
+[12-Feb-2026 07:17:46 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in D:\XAMPP\htdocs\Intercom Directory\config.php on line 4
+[12-Feb-2026 07:17:46 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in D:\XAMPP\htdocs\Intercom Directory\config.php on line 7
+[12-Feb-2026 07:17:46 Europe/Berlin] Parsed phone numbers: Array
+(
+    [0] => Array
+        (
+            [number] => 231
+            [description] => Office contact
+        )
+
+    [1] => Array
+        (
+            [number] => 3213
+            [description] => Office contact
+        )
+
+)
+
+[12-Feb-2026 07:17:46 Europe/Berlin] Inserting into numbers table with:
+[12-Feb-2026 07:17:46 Europe/Berlin] phoneFieldValue: 231, 3213
+[12-Feb-2026 07:17:46 Europe/Berlin] emailFieldValue: dalvyx123@gmail.com
+[12-Feb-2026 07:17:46 Europe/Berlin] combinedDescription: Office contact (Multiple lines) - Email available
+[12-Feb-2026 07:17:46 Europe/Berlin] headUserId: 5
+[12-Feb-2026 07:17:46 Europe/Berlin] headFullName: test
+[12-Feb-2026 07:17:46 Europe/Berlin] division_id_insert: NULL
+[12-Feb-2026 07:17:46 Europe/Berlin] department_id_insert: NULL
+[12-Feb-2026 07:17:46 Europe/Berlin] unit_id_insert: NULL
+[12-Feb-2026 07:17:46 Europe/Berlin] office_id_insert: 11
+[16-Feb-2026 07:34:58 Europe/Berlin] PHP Warning:  Undefined array key "numbers" in C:\xampp\htdocs\Intercom Directory\config.php on line 4
+[16-Feb-2026 07:34:58 Europe/Berlin] PHP Warning:  foreach() argument must be of type array|object, null given in C:\xampp\htdocs\Intercom Directory\config.php on line 7
+[16-Feb-2026 07:34:58 Europe/Berlin] Parsed phone numbers: Array
+(
+    [0] => Array
+        (
+            [number] => 1231232
+            [description] => 1231231
+        )
+
+)
+
+[16-Feb-2026 07:34:58 Europe/Berlin] Inserting into numbers table with:
+[16-Feb-2026 07:34:58 Europe/Berlin] phoneFieldValue: 1231232
+[16-Feb-2026 07:34:58 Europe/Berlin] emailFieldValue: raignereyes@gmail.com
+[16-Feb-2026 07:34:58 Europe/Berlin] combinedDescription: 1231231 - Email available
+[16-Feb-2026 07:34:58 Europe/Berlin] headUserId: 5
+[16-Feb-2026 07:34:58 Europe/Berlin] headFullName: test
+[16-Feb-2026 07:34:58 Europe/Berlin] division_id_insert: NULL
+[16-Feb-2026 07:34:58 Europe/Berlin] department_id_insert: NULL
+[16-Feb-2026 07:34:58 Europe/Berlin] unit_id_insert: 3
+[16-Feb-2026 07:34:58 Europe/Berlin] office_id_insert: NULL

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>You're Invited!</title>
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Arial', sans-serif;
+        background-color: white;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+    }
+    .container {
+        text-align: center;
+        background-color: #0B2545; /* Navy Blue */
+        padding: 50px;
+        border-radius: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        z-index: 1;
+        position: relative;
+        border: 3px solid #D4AF37; /* Gold border */
+        color: #D4AF37; /* Gold text */
+        max-width: 400px;
+    }
+    h1 {
+        font-size: 2.8em;
+        margin-bottom: 20px;
+    }
+    p {
+        font-size: 1.2em;
+        margin: 10px 0;
+    }
+    strong {
+        color: #FFD700; /* Bright Gold for emphasis */
+    }
+    button {
+        margin-top: 25px;
+        padding: 15px 30px;
+        font-size: 1em;
+        border: none;
+        border-radius: 10px;
+        background-color: #D4AF37; /* Gold button */
+        color: #0B2545; /* Navy Blue text */
+        cursor: pointer;
+        transition: 0.3s;
+        font-weight: bold;
+    }
+    button:hover {
+        background-color: #FFD700; /* Brighter gold on hover */
+    }
+    canvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+        z-index: 0;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>🎉 You're Invited! 🎉</h1>
+    <p>Join us for a special event!</p>
+    <p><strong>Date:</strong> February 14, 2026</p>
+    <p><strong>Time:</strong> 5:00 PM</p>
+    <p><strong>Location:</strong> Sunshine Hall</p>
+    <button onclick="alert('Thank you for RSVPing!')">RSVP Now</button>
+</div>
+
+<canvas id="confettiCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('confettiCanvas');
+const ctx = canvas.getContext('2d');
+let W = window.innerWidth;
+let H = window.innerHeight;
+canvas.width = W;
+canvas.height = H;
+
+class Confetti {
+    constructor() {
+        this.x = Math.random() * W;
+        this.y = Math.random() * H - H;
+        this.r = Math.random() * 6 + 4;
+        this.d = Math.random() * 40;
+        this.color = Math.random() > 0.5 ? '#0B2545' : '#D4AF37'; // Navy or Gold
+        this.tilt = Math.random() * 10 - 10;
+        this.tiltAngleIncremental = Math.random() * 0.07 + 0.05;
+        this.tiltAngle = 0;
+    }
+    draw() {
+        ctx.beginPath();
+        ctx.lineWidth = this.r / 2;
+        ctx.strokeStyle = this.color;
+        ctx.moveTo(this.x + this.tilt + this.r / 4, this.y);
+        ctx.lineTo(this.x + this.tilt, this.y + this.tilt + this.r / 4);
+        ctx.stroke();
+    }
+}
+
+let confettiParticles = [];
+for(let i=0; i<150; i++){
+    confettiParticles.push(new Confetti());
+}
+
+function drawConfetti() {
+    ctx.clearRect(0, 0, W, H);
+    confettiParticles.forEach((c) => {
+        c.tiltAngle += c.tiltAngleIncremental;
+        c.y += (Math.cos(c.d) + 3 + c.r/2)/2;
+        c.tilt = Math.sin(c.tiltAngle) * 15;
+        if(c.y > H) c.y = -10;
+        c.draw();
+    });
+    requestAnimationFrame(drawConfetti);
+}
+
+drawConfetti();
+
+window.addEventListener('resize', () => {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+});
+</script>
+</body>
+</html>
