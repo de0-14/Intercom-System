@@ -1,0 +1,183 @@
+[2026-02-13 08:36:38] ========== ADMIN PANEL LOADED ==========
+[2026-02-13 08:36:38] SESSION: Array
+(
+    [user_id] => 1
+    [username] => Operator
+    [role_id] => 1
+)
+
+[2026-02-13 08:36:38] GET: Array
+(
+    [view] => archived
+)
+
+[2026-02-13 08:36:38] POST: Array
+(
+)
+
+[2026-02-13 08:36:38] Current user_id: 1
+[2026-02-13 08:36:38] isAdmin(): YES
+[2026-02-13 08:36:38] Database connection OK
+[2026-02-13 08:36:38] ERROR checking users table: Array
+(
+    [0] => Array
+        (
+            [0] => 42S22
+            [SQLSTATE] => 42S22
+            [1] => 207
+            [code] => 207
+            [2] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+            [message] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+        )
+
+    [1] => Array
+        (
+            [0] => 42S22
+            [SQLSTATE] => 42S22
+            [1] => 207
+            [code] => 207
+            [2] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+            [message] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+        )
+
+)
+
+[2026-02-13 08:36:38] admin_chats table EXISTS
+[2026-02-13 08:36:39] admin_chats columns: chat_id, admin_id, user_id, created_at, is_archived, archived_at, last_activity
+[2026-02-13 08:36:43] ========== ADMIN PANEL LOADED ==========
+[2026-02-13 08:36:43] SESSION: Array
+(
+    [user_id] => 1
+    [username] => Operator
+    [role_id] => 1
+)
+
+[2026-02-13 08:36:43] GET: Array
+(
+)
+
+[2026-02-13 08:36:43] POST: Array
+(
+)
+
+[2026-02-13 08:36:43] Current user_id: 1
+[2026-02-13 08:36:43] isAdmin(): YES
+[2026-02-13 08:36:43] Database connection OK
+[2026-02-13 08:36:43] ERROR checking users table: Array
+(
+    [0] => Array
+        (
+            [0] => 42S22
+            [SQLSTATE] => 42S22
+            [1] => 207
+            [code] => 207
+            [2] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+            [message] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+        )
+
+    [1] => Array
+        (
+            [0] => 42S22
+            [SQLSTATE] => 42S22
+            [1] => 207
+            [code] => 207
+            [2] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+            [message] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+        )
+
+)
+
+[2026-02-13 08:36:43] admin_chats table EXISTS
+[2026-02-13 08:36:43] admin_chats columns: chat_id, admin_id, user_id, created_at, is_archived, archived_at, last_activity
+[2026-02-13 08:36:44] ========== ADMIN PANEL LOADED ==========
+[2026-02-13 08:36:44] SESSION: Array
+(
+    [user_id] => 1
+    [username] => Operator
+    [role_id] => 1
+)
+
+[2026-02-13 08:36:44] GET: Array
+(
+    [chat_id] => 16
+)
+
+[2026-02-13 08:36:44] POST: Array
+(
+)
+
+[2026-02-13 08:36:44] Current user_id: 1
+[2026-02-13 08:36:44] isAdmin(): YES
+[2026-02-13 08:36:44] Database connection OK
+[2026-02-13 08:36:44] ERROR checking users table: Array
+(
+    [0] => Array
+        (
+            [0] => 42S22
+            [SQLSTATE] => 42S22
+            [1] => 207
+            [code] => 207
+            [2] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+            [message] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+        )
+
+    [1] => Array
+        (
+            [0] => 42S22
+            [SQLSTATE] => 42S22
+            [1] => 207
+            [code] => 207
+            [2] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+            [message] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+        )
+
+)
+
+[2026-02-13 08:36:44] admin_chats table EXISTS
+[2026-02-13 08:36:44] admin_chats columns: chat_id, admin_id, user_id, created_at, is_archived, archived_at, last_activity
+[2026-02-13 08:36:46] ========== ADMIN PANEL LOADED ==========
+[2026-02-13 08:36:46] SESSION: Array
+(
+    [user_id] => 1
+    [username] => Operator
+    [role_id] => 1
+)
+
+[2026-02-13 08:36:46] GET: Array
+(
+    [chat_id] => 16
+)
+
+[2026-02-13 08:36:46] POST: Array
+(
+)
+
+[2026-02-13 08:36:46] Current user_id: 1
+[2026-02-13 08:36:46] isAdmin(): YES
+[2026-02-13 08:36:46] Database connection OK
+[2026-02-13 08:36:46] ERROR checking users table: Array
+(
+    [0] => Array
+        (
+            [0] => 42S22
+            [SQLSTATE] => 42S22
+            [1] => 207
+            [code] => 207
+            [2] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+            [message] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+        )
+
+    [1] => Array
+        (
+            [0] => 42S22
+            [SQLSTATE] => 42S22
+            [1] => 207
+            [code] => 207
+            [2] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+            [message] => [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid column name 'is_admin'.
+        )
+
+)
+
+[2026-02-13 08:36:46] admin_chats table EXISTS
+[2026-02-13 08:36:46] admin_chats columns: chat_id, admin_id, user_id, created_at, is_archived, archived_at, last_activity

@@ -309,6 +309,17 @@ ul.nav li a:hover {
     background-color: rgba(255,255,255,0.2);
 }
 
+/* Active state for navigation - matches profilepage.php exactly */
+ul.nav li a.active {
+    background-color: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
+ul.nav li a.active:hover {
+    background-color: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
 .content {
     flex: 1;
     margin-top: 100px;
@@ -1369,14 +1380,14 @@ ul.nav li a:hover {
                 <li><a href="editpage.php">Edit page</a></li>
                 <li>
                     <a href="adminpanel.php" class="notification-indicator">
-                        Admin Panel 
+                        Operator Panel 
                         <?php if ($admin_notifications_count > 0): ?>
                             <span class="nav-notification-badge"><?php echo $admin_notifications_count; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
             <?php else: ?>
-                <li><a href="adminchat.php">Chat with Admin <?php echo $user_unread > 0 ? "($user_unread)" : ""; ?></a></li>
+                <li><a href="adminchat.php">Chat with an Operator <?php echo $user_unread > 0 ? "($user_unread)" : ""; ?></a></li>
             <?php endif; ?>
             <li><a href="profilepage.php">Profile</a></li>
             <li><a href="logout.php">Logout (<?php echo getUserName(); ?>)</a></li>
@@ -1537,7 +1548,7 @@ ul.nav li a:hover {
                     <?php endif; ?>
                 </button>
                 <div class="admin-chat-dropdown" id="adminChatDropdown">
-                    <h4>Chat with Admin</h4>
+                    <h4>Chat with Operator</h4>
                     <div class="admin-chat-list" id="adminChatList">
                         <?php
                         if($user_id) {
@@ -1549,7 +1560,7 @@ ul.nav li a:hover {
                                     <?php echo strtoupper(substr($chat['full_name'], 0, 1)); ?>
                                 </div>
                                 <div class="admin-chat-info">
-                                    <span class="admin-chat-name">Admin <?php echo htmlspecialchars($chat['full_name']); ?></span>
+                                    <span class="admin-chat-name"><?php echo htmlspecialchars($chat['full_name']); ?></span>
                                     <span class="admin-chat-preview"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages yet', 0, 30)); ?></span>
                                 </div>
                                 <div class="admin-chat-time">
@@ -1568,7 +1579,7 @@ ul.nav li a:hover {
                         <?php 
                                 endforeach; 
                         ?>
-                            <a href="adminchat.php?new=1" class="new-chat-btn">Start New Chat with Different Admin</a>
+                            <a href="adminchat.php?new=1" class="new-chat-btn">Start New Chat with Different Operator</a>
                         <?php
                             else:
                                 $admins = getAvailableAdmins($conn);
@@ -1938,6 +1949,21 @@ let currentSort = 'default';
 let originalRows = [];
 let currentFilter = 'all';
 
+// Function to set active navigation based on current page
+function setActiveNav() {
+    const currentPage = window.location.pathname.split('/').pop();
+    const navLinks = document.querySelectorAll('.nav li a');
+    
+    navLinks.forEach(link => {
+        const href = link.getAttribute('href');
+        if (href === currentPage) {
+            link.classList.add('active');
+        } else {
+            link.classList.remove('active');
+        }
+    });
+}
+
 function filterSearch(){
     const input = document.getElementById('searchInput').value.toLowerCase();
     const rows = document.querySelectorAll('.contact-row, .head-contact-row, .user-contact-row');
@@ -2055,12 +2081,17 @@ function applySort(sortType){
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Set active navigation
+    setActiveNav();
+    
     const tbody = document.getElementById('contacts-tbody');
     originalRows = Array.from(tbody.querySelectorAll('.contact-row'));
     
     const clickableRows = document.querySelectorAll('.clickable-row');
     clickableRows.forEach(row => {
-        row.addEventListener('click', function() {
+        row.addEventListener('click', function(e) {
+            // Don't trigger click if clicking on a link inside the row
+            if (e.target.tagName === 'A') return;
             const contactId = this.getAttribute('data-id');
             window.location.href = `numpage.php?id=${contactId}`;
         });
@@ -2069,6 +2100,8 @@ document.addEventListener('DOMContentLoaded', function() {
     tbody.addEventListener('click', function(e) {
         const row = e.target.closest('.clickable-row');
         if (row) {
+            // Don't trigger click if clicking on a link inside the row
+            if (e.target.tagName === 'A') return;
             const contactId = row.getAttribute('data-id');
             window.location.href = `numpage.php?id=${contactId}`;
         }
@@ -2079,6 +2112,8 @@ document.addEventListener('DOMContentLoaded', function() {
         headTable.addEventListener('click', function(e) {
             const row = e.target.closest('.clickable-row');
             if (row) {
+                // Don't trigger click if clicking on a link inside the row
+                if (e.target.tagName === 'A') return;
                 const contactId = row.getAttribute('data-id');
                 window.location.href = `numpage.php?id=${contactId}`;
             }
@@ -2090,12 +2125,15 @@ document.addEventListener('DOMContentLoaded', function() {
         userTable.addEventListener('click', function(e) {
             const row = e.target.closest('.clickable-row');
             if (row) {
+                // Don't trigger click if clicking on a link inside the row
+                if (e.target.tagName === 'A') return;
                 const contactId = row.getAttribute('data-id');
                 window.location.href = `numpage.php?id=${contactId}`;
             }
         });
     }
     
+    // Click outside dropdowns to close them
     document.addEventListener('click', function(e) {
         const chatBtn = document.getElementById('adminChatBtn');
         const dropdown = document.getElementById('adminChatDropdown');

@@ -880,6 +880,18 @@ $all_heads = getUsersByRoleIds($conn, [3, 4, 5, 6]);
             background-color: rgba(255,255,255,0.2);
         }
 
+        /* ============ ACTIVE STATE STYLING - MATCHING PROFILEPAGE.PHP ============ */
+        ul.nav li a.active {
+            background-color: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+        ul.nav li a.active:hover {
+            background-color: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        /* ============ END ACTIVE STATE STYLING ============ */
+
         /* --- MAIN CONTENT --- */
         .content {
             flex: 1;
@@ -1569,17 +1581,18 @@ $all_heads = getUsersByRoleIds($conn, [3, 4, 5, 6]);
         <?php if (isLoggedIn()): ?>
             <?php if (isAdmin()): ?>
                 <li><a href="createpage.php">Create page</a></li>
-                <li><a href="editpage.php">Edit page</a></li>
+                <!-- ============ ADDED ACTIVE CLASS TO EDIT PAGE BUTTON ============ -->
+                <li><a href="editpage.php" class="active">Edit page</a></li>
                 <li>
                     <a href="adminpanel.php" class="notification-indicator">
-                        Admin Panel 
+                        Operator Panel 
                         <?php if ($admin_notifications_count > 0): ?>
                             <span class="nav-notification-badge"><?php echo $admin_notifications_count; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
             <?php else: ?>
-                <li><a href="adminchat.php">Chat with Admin <?php echo $user_unread > 0 ? "($user_unread)" : ""; ?></a></li>
+                <li><a href="adminchat.php">Chat with an Operator <?php echo $user_unread > 0 ? "($user_unread)" : ""; ?></a></li>
             <?php endif; ?>
             <li><a href="profilepage.php">Profile</a></li>
             <li><a href="logout.php">Logout (<?php echo getUserName(); ?>)</a></li>

@@ -988,14 +988,14 @@ ul.nav li a.active {
                 <li><a href="editpage.php">Edit page</a></li>
                 <li>
                     <a href="adminpanel.php" class="notification-indicator">
-                        Admin Panel 
+                        Operator Panel 
                         <?php if ($admin_notifications_count > 0): ?>
                             <span class="nav-notification-badge"><?php echo $admin_notifications_count; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
             <?php else: ?>
-                <li><a href="adminchat.php">Chat with Admin <?php echo $user_unread > 0 ? "($user_unread)" : ""; ?></a></li>
+                <li><a href="adminchat.php">Chat with an Operator <?php echo $user_unread > 0 ? "($user_unread)" : ""; ?></a></li>
             <?php endif; ?>
             <li><a href="profilepage.php">Profile</a></li>
             <li><a href="logout.php">Logout (<?php echo getUserName(); ?>)</a></li>

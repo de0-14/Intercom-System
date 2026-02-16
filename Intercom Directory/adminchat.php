@@ -17,9 +17,6 @@ if(!isLoggedIn()) {
 date_default_timezone_set('Asia/Manila');
 ini_set('date.timezone', 'Asia/Manila');
 
-// SQL Server doesn't need timezone setting like MySQL
-// Remove: if ($conn) { $conn->query("SET time_zone = '+08:00'"); }
-
 $user_id = $_SESSION['user_id'];
 $is_admin = isAdmin();
 $selected_chat_id = isset($_GET['chat_id']) ? (int)$_GET['chat_id'] : null;
@@ -110,20 +107,60 @@ if($selected_chat_id && !$view_archived) {
     }
 }
 
-if($_SERVER['REQUEST_METHOD'] === 'POST' && !$view_archived) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$view_archived) {
+    // Check if it's an AJAX request
+    $is_ajax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+               strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
+    
     if(isset($_POST['send_message'])) {
         $chat_id = (int)$_POST['chat_id'];
         $message = trim($_POST['message']);
         
         if(empty($message)) {
+            if ($is_ajax) {
+                echo json_encode(['success' => false, 'error' => 'Empty message']);
+                exit();
+            }
             $error = "Please enter a message.";
-        } else { 
+        } else {
             if(sendAdminMessage($conn, $chat_id, $user_id, $message)) {
-                if (function_exists('updateAdminChatActivity')) {
-                    updateAdminChatActivity($conn, $chat_id);
+                updateAdminChatActivity($conn, $chat_id);
+                
+                // Get the sent message
+                $sql = "SELECT TOP 1 am.*, u.full_name, u.username 
+                        FROM admin_messages am 
+                        JOIN users u ON am.sender_id = u.user_id 
+                        WHERE am.chat_id = ? 
+                        ORDER BY am.created_at DESC";
+                $params = array($chat_id);
+                $stmt = sqlsrv_query($conn, $sql, $params);
+                
+                if ($stmt && $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+                    if ($is_ajax) {
+                        echo json_encode([
+                            'success' => true,
+                            'message' => [
+                                'message_id' => $row['message_id'],
+                                'sender_id' => $row['sender_id'],
+                                'full_name' => $row['full_name'],
+                                'message' => $row['message'],
+                                'created_at' => $row['created_at'] instanceof DateTime 
+                                    ? $row['created_at']->format('Y-m-d H:i:s') 
+                                    : $row['created_at'],
+                                'is_sent' => true
+                            ]
+                        ]);
+                        exit();
+                    } else {
+                        $success = "Message sent!";
+                        header("Location: " . basename($_SERVER['PHP_SELF']) . "?chat_id=$chat_id");
+                        exit();
+                    }
                 }
-                $success = "Message sent!";
-                header("Location: adminchat.php?chat_id=$chat_id");
+            }
+            
+            if ($is_ajax) {
+                echo json_encode(['success' => false, 'error' => 'Failed to send message']);
                 exit();
             } else {
                 $error = "Failed to send message.";
@@ -131,11 +168,23 @@ if($_SERVER['REQUEST_METHOD'] === 'POST' && !$view_archived) {
         }
     }
     
-    if(isset($_POST['archive_chat']) && $is_admin) {
+    // Handle other POST requests (start_chat, archive_chat) - these can still redirect
+    if(isset($_POST['start_chat'])) {
+        $target_user_id = (int)$_POST['user_id'];
+        $chat_id = createAdminChatConversation($conn, $target_user_id, $user_id);
+        if($chat_id) {
+            header("Location: " . basename($_SERVER['PHP_SELF']) . "?chat_id=$chat_id");
+            exit();
+        } else {
+            $error = "Failed to start chat.";
+        }
+    }
+    
+    if(isset($_POST['archive_chat']) && isAdmin()) {
         $chat_id = (int)$_POST['chat_id'];
         if(archiveAdminChatImmediately($conn, $chat_id)) {
             $success = "Chat archived successfully!";
-            header("Location: adminchat.php");
+            header("Location: " . basename($_SERVER['PHP_SELF']));
             exit();
         } else {
             $error = "Failed to archive chat.";
@@ -151,19 +200,77 @@ $unread_count = getUnreadAdminMessageCount($conn, $user_id, $is_admin);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?php echo $is_admin ? 'Admin Chat' : 'Chat with Admin'; ?></title>
+<title><?php echo $is_admin ? 'Admin Chat' : 'Chat with Operator'; ?></title>
 <style>
 * { box-sizing: border-box; margin:0; padding:0; font-family:"Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
 .new-conversation-indicator { font-size: 11px; color: #718096; font-style: italic; margin-left: 5px; }
 body { min-height: 100vh; display: flex; flex-direction: column; background-color: #edf4fc; }
-.header { position: fixed; top: 0; left: 0; width: 100%; background-color: #07417f; color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-bottom: 3px solid #2b6cb0; }
-.header .logo { display: flex; align-items: center; gap: 15px; }
-.header .logo img { width: 55px; height: 55px; object-fit: contain; }
-.header .logo span { font-size: 1.5rem; font-weight: 700; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.2); }
-ul.nav { display: flex; list-style: none; gap: 8px; }
-ul.nav li a { display: block; color: white; text-decoration: none; padding: 10px 18px; font-weight: 600; border-radius: 6px; transition: all 0.2s; }
-ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
-.content { flex: 1; margin-top: 100px; padding: 20px; max-width: 1200px; margin-left: auto; margin-right: auto; width: 100%; }
+.header { 
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    width: 100%; 
+    background-color: #07417f; 
+    color: white; 
+    padding: 20px 30px; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    z-index: 1000; 
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+    border-bottom: 3px solid #2b6cb0; 
+}
+.header .logo { 
+    display: flex; 
+    align-items: center; 
+    gap: 15px; 
+}
+.header .logo img { 
+    width: 55px; 
+    height: 55px; 
+    object-fit: contain; 
+}
+.header .logo span { 
+    font-size: 1.5rem; 
+    font-weight: 700; 
+    color: white; 
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2); 
+}
+ul.nav { 
+    display: flex; 
+    list-style: none; 
+    gap: 8px; 
+}
+ul.nav li a { 
+    display: block; 
+    color: white; 
+    text-decoration: none; 
+    padding: 10px 18px; 
+    font-weight: 600; 
+    border-radius: 6px; 
+    transition: all 0.2s; 
+    position: relative;
+}
+ul.nav li a:hover { 
+    background-color: rgba(255,255,255,0.2); 
+}
+ul.nav li a.active { 
+    background-color: rgba(255,255,255,0.15); 
+    border: 1px solid rgba(255,255,255,0.3); 
+}
+ul.nav li a.active:hover { 
+    background-color: rgba(255,255,255,0.15); 
+    border: 1px solid rgba(255,255,255,0.3); 
+}
+.content { 
+    flex: 1; 
+    margin-top: 100px; 
+    padding: 20px; 
+    max-width: 1200px; 
+    margin-left: auto; 
+    margin-right: auto; 
+    width: 100%; 
+}
 .chat-container { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); height: calc(100vh - 160px); display: flex; }
 .chat-sidebar { width: 300px; background: #f7fafc; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; }
 .chat-header-bar { background: linear-gradient(135deg, #2b6cb0 0%, #1f4f8b 100%); color: white; padding: 20px; }
@@ -232,6 +339,23 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
 .hierarchy-value { flex: 1; color: white; font-weight: 500; font-size: 11px; line-height: 1.3; }
 .hierarchy-divider { height: 1px; background: rgba(255,255,255,0.1); margin: 5px 0; }
 .chat-item, .admin-select-item, .message-sender { position: relative; }
+.nav-notification-badge { 
+    background-color: #e53e3e; 
+    color: white; 
+    font-size: 11px; 
+    padding: 2px 6px; 
+    border-radius: 10px; 
+    min-width: 18px; 
+    text-align: center; 
+    margin-left: 5px; 
+    animation: pulse 2s infinite; 
+    display: inline-block; 
+}
+@keyframes pulse { 
+    0% { transform: scale(1); } 
+    50% { transform: scale(1.1); } 
+    100% { transform: scale(1); } 
+}
 </style>
 </head>
 <body>
@@ -247,9 +371,9 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
             <?php if (isAdmin()): ?>
                 <li><a href="createpage.php">Create page</a></li>
                 <li><a href="editpage.php">Edit page</a></li>
-                <li><a href="adminpanel.php">Admin Panel</a></li>
+                <li><a href="adminpanel.php">Operator Panel</a></li>
             <?php else: ?>
-                <li><a href="adminchat.php" class="active">Chat with Admin <?php echo $unread_count > 0 ? "($unread_count)" : ""; ?></a></li>
+                <li><a href="adminchat.php" class="active">Chat with an Operator <?php echo $unread_count > 0 ? "<span class='nav-notification-badge'>$unread_count</span>" : ""; ?></a></li>
             <?php endif; ?>
             <li><a href="profilepage.php">Profile</a></li>
             <li><a href="logout.php">Logout (<?php echo getUserName(); ?>)</a></li>
@@ -271,7 +395,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
     <div class="chat-container">
         <div class="chat-sidebar">
             <div class="chat-header-bar">
-                <h2><?php echo $is_admin ? 'Admin Chats' : 'Chat with Admin'; ?></h2>
+                <h2><?php echo $is_admin ? 'Admin Chats' : 'Chat with Operator'; ?></h2>
             </div>
             
             <?php if ($is_admin || $archived_chats_count > 0): ?>
@@ -301,7 +425,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                            class="chat-item archived <?php echo $selected_chat_id == $chat['chat_id'] ? 'active' : ''; ?>">
                             <div class="chat-avatar"><?php echo strtoupper(substr($chat['full_name'], 0, 1)); ?></div>
                             <div class="chat-info">
-                                <div class="chat-name"><?php echo $is_admin ? htmlspecialchars($chat['full_name']) : 'Admin ' . htmlspecialchars($chat['full_name']); ?><span class="archive-badge">Archived</span></div>
+                                <div class="chat-name"><?php echo $is_admin ? htmlspecialchars($chat['full_name']) : htmlspecialchars($chat['full_name']); ?><span class="archive-badge">Archived</span></div>
                                 <div class="chat-preview"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages', 0, 30)); ?></div>
                             </div>
                             <div class="chat-time"><?php if($chat['archived_at']): ?><?php echo date('M d', strtotime($chat['archived_at']->format('Y-m-d H:i:s'))); ?><?php endif; ?></div>
@@ -353,7 +477,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                     class="chat-item <?php echo $selected_chat_id == $chat['chat_id'] ? 'active' : ''; ?>">
                         <div class="chat-avatar"><?php echo strtoupper(substr($chat['full_name'], 0, 1)); ?></div>
                         <div class="chat-info">
-                            <div class="chat-name"><?php echo $is_admin ? htmlspecialchars($chat['full_name']) : 'Admin ' . htmlspecialchars($chat['full_name']); ?></div>
+                            <div class="chat-name"><?php echo $is_admin ? htmlspecialchars($chat['full_name']) : htmlspecialchars($chat['full_name']); ?></div>
                             <div class="chat-preview"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages yet', 0, 30)); ?></div>
                         </div>
                         <div class="chat-time"><?php if($chat['last_message_time']): ?><?php echo date('H:i', strtotime($chat['last_message_time']->format('Y-m-d H:i:s'))); ?><?php endif; ?></div>
@@ -450,7 +574,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                     
                     <?php elseif(!$is_admin): ?>
                         <div class="admin-select-list">
-                            <h4 style="color: #4a5568; font-size: 14px; margin: 15px 0 10px 0;">Select an Admin to Chat With</h4>
+                            <h4 style="color: #4a5568; font-size: 14px; margin: 15px 0 10px 0;">Select an Operator to Chat With</h4>
                             <?php
                             $admins = getAvailableAdmins($conn);
                             foreach($admins as $admin):
@@ -514,7 +638,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
             <?php if($selected_chat): ?>
                 <div class="chat-header <?php echo $view_archived ? 'archived-chat' : ''; ?>" style="<?php echo $view_archived ? 'background: #f1f5f9; border-color: #cbd5e0;' : ''; ?>">
                     <h3 style="<?php echo $view_archived ? 'color: #4a5568;' : ''; ?>">
-                        <?php if ($view_archived): ?>📁 Archived Chat with <?php echo $is_admin ? htmlspecialchars($selected_chat['other_full_name'] ?? $selected_chat['full_name']) : 'Admin ' . htmlspecialchars($selected_chat['other_full_name'] ?? $selected_chat['full_name']); ?>
+                        <?php if ($view_archived): ?>📁 Archived Chat with <?php echo $is_admin ? htmlspecialchars($selected_chat['other_full_name'] ?? $selected_chat['full_name']) : htmlspecialchars($selected_chat['other_full_name'] ?? $selected_chat['full_name']); ?>
                         <?php else: ?>Chat with <?php echo $is_admin ? htmlspecialchars($selected_chat['full_name']) : 'Admin ' . htmlspecialchars($selected_chat['full_name']); ?>
                         <?php endif; ?>
                     </h3>
@@ -620,38 +744,296 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const chatMessages = document.getElementById('chat-messages');
-    if(chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+    'use strict';
+    console.log('AdminChat Full AJAX Loaded');
+
+    // ============ CONFIGURATION ============
+    const chatId = <?php echo json_encode($selected_chat_id ?? 0); ?>;
+    const userId = <?php echo json_encode($user_id); ?>;
+    const isAdmin = <?php echo json_encode($is_admin); ?>;
+    const viewArchived = <?php echo json_encode($view_archived); ?>;
+    const POLL_DELAY = 3000; // 3 seconds
     
-    const chatForm = document.querySelector('.chat-form');
-    if(chatForm) {
-        const textarea = chatForm.querySelector('textarea');
-        const sendButton = chatForm.querySelector('button[type="submit"]');
+    // ============ STATE ============
+    let lastMessageId = 0;
+    let pollInterval = null;
+    let isSending = false;
+    
+    // ============ INITIALIZATION ============
+    function initialize() {
+        // Add data-message-id to existing messages
+        document.querySelectorAll('.message').forEach((msg, idx) => {
+            if (!msg.hasAttribute('data-message-id')) {
+                msg.setAttribute('data-message-id', idx + 1);
+            }
+        });
         
-        if(textarea && sendButton) {
-            textarea.addEventListener('keydown', function(e) {
-                if ((e.key === 'Enter' || e.which === 13 || e.keyCode === 13) && !e.shiftKey) {
-                    e.preventDefault();
-                    if (this.value.trim() !== '') {
-                        const originalBg = sendButton.style.backgroundColor;
-                        const originalBorder = textarea.style.borderColor;
-                        textarea.style.borderColor = '#38a169';
-                        sendButton.style.backgroundColor = '#38a169';
-                        sendButton.click();
-                        setTimeout(() => {
-                            textarea.style.borderColor = originalBorder;
-                            sendButton.style.backgroundColor = originalBg;
-                        }, 200);
-                    }
-                }
-            });
-            setTimeout(() => textarea.focus(), 100);
+        lastMessageId = getLastMessageId();
+        console.log('Initial lastMessageId:', lastMessageId);
+        
+        // Scroll to bottom
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Start polling if we have an active chat
+        if (chatId && !viewArchived) {
+            startPolling();
         }
     }
     
-    <?php if (!$view_archived && $selected_chat_id): ?>
-    setInterval(() => { location.reload(); }, 60000);
-    <?php endif; ?>
+    // ============ MESSAGE POLLING ============
+    function startPolling() {
+        if (pollInterval) clearInterval(pollInterval);
+        fetchNewMessages();
+        pollInterval = setInterval(fetchNewMessages, POLL_DELAY);
+        console.log('✅ Polling started - interval:', POLL_DELAY + 'ms');
+    }
+    
+    function stopPolling() {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+            console.log('⏸️ Polling stopped');
+        }
+    }
+    
+    function fetchNewMessages() {
+        if (!chatId || viewArchived) return;
+        
+        fetch(`get_admin_messages.php?chat_id=${chatId}&last_message_id=${lastMessageId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.messages && data.messages.length > 0) {
+                    appendMessages(data.messages);
+                    lastMessageId = data.last_message_id;
+                    
+                    // Update unread badge
+                    if (data.unread_count > 0) {
+                        const badge = document.querySelector('.nav-notification-badge');
+                        if (badge) badge.textContent = data.unread_count;
+                    }
+                }
+            })
+            .catch(error => console.error('Polling error:', error));
+    }
+    
+    // ============ APPEND MESSAGES ============
+    function appendMessages(messages) {
+        const chatMessages = document.getElementById('chat-messages');
+        if (!chatMessages) return;
+        
+        const wasAtBottom = isScrolledToBottom();
+        let newMessagesAdded = false;
+        
+        messages.forEach(msg => {
+            // Skip if message already exists
+            if (document.querySelector(`.message[data-message-id="${msg.message_id}"]`)) {
+                return;
+            }
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${msg.is_sent ? 'sent' : 'received'}`;
+            messageDiv.setAttribute('data-message-id', msg.message_id);
+            
+            messageDiv.innerHTML = `
+                <div class="message-sender">${escapeHtml(msg.full_name)}</div>
+                <div class="message-bubble">
+                    ${escapeHtml(msg.message).replace(/\n/g, '<br>')}
+                    <div class="message-time">${formatTime(msg.created_at)}</div>
+                </div>
+            `;
+            
+            chatMessages.appendChild(messageDiv);
+            newMessagesAdded = true;
+        });
+        
+        if (newMessagesAdded && wasAtBottom) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+    
+    // ============ SEND MESSAGE VIA AJAX ============
+    function sendMessage(messageText) {
+        if (isSending || !messageText.trim() || !chatId) return false;
+        
+        isSending = true;
+        const sendButton = document.querySelector('.send-btn');
+        const originalText = sendButton ? sendButton.textContent : 'Send';
+        const textarea = document.querySelector('.chat-input');
+        
+        // Save the message to restore if needed
+        const originalMessage = messageText;
+        
+        // Update button state
+        if (sendButton) {
+            sendButton.disabled = true;
+            sendButton.textContent = 'Sending...';
+        }
+        
+        // Clear textarea immediately for better UX
+        if (textarea) {
+            textarea.value = '';
+            textarea.style.height = 'auto';
+        }
+        
+        const formData = new FormData();
+        formData.append('send_message', '1');
+        formData.append('chat_id', chatId);
+        formData.append('message', messageText);
+        
+        return fetch(window.location.pathname, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.message) {
+                // Append the sent message
+                appendMessages([data.message]);
+                lastMessageId = data.message.message_id;
+                console.log('✅ Message sent successfully');
+                return true;
+            } else {
+                console.error('Failed to send message:', data.error);
+                // Restore the message if failed
+                if (textarea) textarea.value = originalMessage;
+                alert('Failed to send message. Please try again.');
+                return false;
+            }
+        })
+        .catch(error => {
+            console.error('Send error:', error);
+            // Restore the message if error
+            if (textarea) textarea.value = originalMessage;
+            alert('Error sending message. Please try again.');
+            return false;
+        })
+        .finally(() => {
+            isSending = false;
+            if (sendButton) {
+                sendButton.disabled = false;
+                sendButton.textContent = originalText;
+            }
+            if (textarea) textarea.focus();
+        });
+    }
+    
+    // ============ UTILITY FUNCTIONS ============
+    function getLastMessageId() {
+        const messages = document.querySelectorAll('.message');
+        if (messages.length === 0) return 0;
+        const last = messages[messages.length - 1];
+        const id = last.getAttribute('data-message-id');
+        return id ? parseInt(id, 10) : 0;
+    }
+    
+    function isScrolledToBottom() {
+        const el = document.getElementById('chat-messages');
+        if (!el) return false;
+        const threshold = 50;
+        return (el.scrollHeight - el.scrollTop - el.clientHeight) < threshold;
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function formatTime(datetime) {
+        const date = new Date(datetime);
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // ============ EVENT LISTENERS ============
+    function setupEventListeners() {
+        const chatForm = document.querySelector('.chat-form');
+        if (!chatForm || viewArchived) return;
+        
+        const textarea = chatForm.querySelector('textarea');
+        const sendButton = chatForm.querySelector('button[type="submit"]');
+        
+        if (!textarea || !sendButton) return;
+        
+        // Prevent default form submission
+        chatForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            return false;
+        });
+        
+        // Send button click
+        sendButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (textarea.value.trim()) {
+                sendMessage(textarea.value.trim());
+            }
+        });
+        
+        // Enter key
+        textarea.addEventListener('keydown', function(e) {
+            if ((e.key === 'Enter' || e.which === 13 || e.keyCode === 13) && !e.shiftKey) {
+                e.preventDefault();
+                if (this.value.trim()) {
+                    sendMessage(this.value.trim());
+                }
+            }
+        });
+        
+        // Auto-resize textarea
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+        
+        setTimeout(() => textarea.focus(), 100);
+    }
+    
+    // ============ ACTIVE NAVIGATION LINK ============
+    function setActiveNavLink() {
+        const currentPage = window.location.pathname.split('/').pop();
+        const navLinks = document.querySelectorAll('.nav a');
+        navLinks.forEach(link => {
+            const linkHref = link.getAttribute('href');
+            if (linkHref === currentPage || 
+                (currentPage === 'adminchat.php' && linkHref === 'adminchat.php') ||
+                (currentPage === '' && linkHref === 'homepage.php')) {
+                link.classList.add('active');
+            } else {
+                link.classList.remove('active');
+            }
+        });
+    }
+    
+    // ============ PAGE VISIBILITY API ============
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            stopPolling();
+        } else {
+            if (chatId && !viewArchived && !pollInterval) {
+                startPolling();
+            }
+        }
+    });
+    
+    // ============ CLEANUP ============
+    window.addEventListener('beforeunload', function() {
+        stopPolling();
+    });
+    
+    // ============ NOTIFICATION PERMISSION ============
+    if (Notification && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+    
+    // ============ START EVERYTHING ============
+    initialize();
+    setupEventListeners();
+    setActiveNavLink();
 });
 </script>
 </body>

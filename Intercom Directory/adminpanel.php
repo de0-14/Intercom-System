@@ -1,41 +1,14 @@
 <?php
-// Add to the top of adminpanel.php and adminchat.php
+ob_start(); // Add output buffering at the very top
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 require_once 'conn.php';
 require_once 'archive_functions.php';
 require_once 'admin_archive_functions.php';
+
 updateAllUsersActivity($conn);
-
 archiveAllInactiveChatsOnLoad($conn);
-
-function safeDateFormat($dateObj, $format = 'M d, Y H:i') {
-    if (empty($dateObj) || $dateObj === null) return '';
-    
-    // If it's already a PHP DateTime object
-    if ($dateObj instanceof DateTime) {
-        return $dateObj->format($format);
-    }
-    
-    // If it's a SQL Server DateTime object (has format method)
-    if (is_object($dateObj) && method_exists($dateObj, 'format')) {
-        try {
-            return $dateObj->format($format);
-        } catch (Exception $e) {
-            // Try to convert to string first
-            $dateString = $dateObj->format('Y-m-d H:i:s');
-            return date($format, strtotime($dateString));
-        }
-    }
-    
-    // If it's a string
-    if (is_string($dateObj)) {
-        return date($format, strtotime($dateObj));
-    }
-    
-    return '';
-}
 
 function getArrayValue($array, $key, $default = '') {
     return isset($array[$key]) ? $array[$key] : $default;
@@ -50,9 +23,57 @@ date_default_timezone_set('Asia/Manila');
 ini_set('date.timezone', 'Asia/Manila');
 
 $user_id = $_SESSION['user_id'];
-$online_users = getOnlineUsers($conn);
-$available_admins = getAdminsWithChatStatus($conn, $user_id);
-$admin_chats = getAdminChats($conn, $user_id, true);
+$is_admin = isAdmin();
+
+// MODIFIED: Get only NON-ADMIN online users (role_id != 1)
+$online_users_sql = "SELECT u.user_id, u.full_name, u.email, r.role_name
+                     FROM users u
+                     LEFT JOIN roles r ON u.role_id = r.role_id
+                     WHERE u.is_active = 1 
+                     AND u.role_id != 1  -- Exclude admins
+                     AND u.user_id != ?   -- Exclude current user
+                     ORDER BY u.full_name";
+$online_users_params = array($user_id);
+$online_users_stmt = sqlsrv_query($conn, $online_users_sql, $online_users_params);
+$online_users = [];
+if ($online_users_stmt) {
+    while ($row = sqlsrv_fetch_array($online_users_stmt, SQLSRV_FETCH_ASSOC)) {
+        $online_users[] = $row;
+    }
+    sqlsrv_free_stmt($online_users_stmt);
+}
+
+// REMOVED: No more admin list
+$available_admins = []; // Empty array
+
+// MODIFIED: Get only chats with NON-ADMIN users
+$admin_chats_sql = "SELECT 
+                        ac.chat_id,
+                        ac.admin_id,
+                        ac.user_id,
+                        ac.created_at,
+                        ac.last_activity,
+                        u.full_name,
+                        u.email,
+                        u.role_id,
+                        (SELECT TOP 1 message FROM admin_messages WHERE chat_id = ac.chat_id AND is_archived = 0 ORDER BY created_at DESC) as last_message,
+                        (SELECT TOP 1 created_at FROM admin_messages WHERE chat_id = ac.chat_id AND is_archived = 0 ORDER BY created_at DESC) as last_message_time
+                    FROM admin_chats ac
+                    JOIN users u ON (CASE WHEN ac.admin_id = ? THEN ac.user_id ELSE ac.admin_id END) = u.user_id
+                    WHERE (ac.admin_id = ? OR ac.user_id = ?)
+                    AND u.role_id != 1  -- Exclude chats with admins
+                    AND ac.is_archived = 0
+                    ORDER BY ac.last_activity DESC";
+$admin_chats_params = array($user_id, $user_id, $user_id);
+$admin_chats_stmt = sqlsrv_query($conn, $admin_chats_sql, $admin_chats_params);
+$admin_chats = [];
+if ($admin_chats_stmt) {
+    while ($row = sqlsrv_fetch_array($admin_chats_stmt, SQLSRV_FETCH_ASSOC)) {
+        $admin_chats[] = $row;
+    }
+    sqlsrv_free_stmt($admin_chats_stmt);
+}
+
 $selected_chat_id = isset($_GET['chat_id']) ? (int)$_GET['chat_id'] : null;
 $selected_chat = null;
 $chat_messages = [];
@@ -73,18 +94,13 @@ $archived_chats_count = 0;
 $archived_this_load = 0;
 $removed_this_load = 0;
 
-// Archive all inactive chats immediately on page load
 $archived_this_load = archiveAllInactiveChatsOnLoad($conn);
-
-// Still need to track removed separately for display
 $seven_days_ago = date('Y-m-d H:i:s', strtotime('-7 days'));
 $removed_this_load = removeOldArchivedAdminChats($conn, $user_id, null, $seven_days_ago);
 
-// Get archived chats count - SQL Server version
 $archived_count_sql = "SELECT COUNT(*) as archive_count FROM admin_chats_archive WHERE admin_id = ?";
 $archived_count_params = array($user_id);
 $archived_count_stmt = sqlsrv_query($conn, $archived_count_sql, $archived_count_params);
-
 if ($archived_count_stmt && sqlsrv_fetch($archived_count_stmt)) {
     $archive_data = sqlsrv_fetch_array($archived_count_stmt, SQLSRV_FETCH_ASSOC);
     $archived_chats_count = $archive_data['archive_count'] ?? 0;
@@ -92,32 +108,108 @@ if ($archived_count_stmt && sqlsrv_fetch($archived_count_stmt)) {
 if ($archived_count_stmt) sqlsrv_free_stmt($archived_count_stmt);
 
 if ($view_archived) {
+    // MODIFIED: Get only archived chats with NON-ADMIN users
     $archived_chats = getArchivedAdminChats($conn, $user_id, true);
+    // Filter out archived chats with admins
+    $archived_chats = array_filter($archived_chats, function($chat) use ($conn) {
+        // Check if the other user is not an admin
+        $other_user_id = $chat['user_id'];
+        $check_sql = "SELECT role_id FROM users WHERE user_id = ?";
+        $check_stmt = sqlsrv_query($conn, $check_sql, array($other_user_id));
+        if ($check_stmt) {
+            if ($row = sqlsrv_fetch_array($check_stmt, SQLSRV_FETCH_ASSOC)) {
+                sqlsrv_free_stmt($check_stmt);
+                return ($row['role_id'] != 1); // Return true if not admin
+            }
+            sqlsrv_free_stmt($check_stmt);
+        }
+        return false;
+    });
     
     if ($selected_chat_id) {
-        $archived_messages_result = getArchivedAdminMessages($conn, $selected_chat_id, $user_id);
-        if ($archived_messages_result['success']) {
-            $chat_messages = $archived_messages_result['messages'];
-            $selected_chat = $archived_messages_result['chat_info'];
-        } else {
-            $selected_chat_id = null;
-            $error = $archived_messages_result['error'];
+        // Check if selected archived chat is with a non-admin
+        $check_user_sql = "SELECT user_id FROM admin_chats_archive WHERE chat_id = ? AND admin_id = ?";
+        $check_user_stmt = sqlsrv_query($conn, $check_user_sql, array($selected_chat_id, $user_id));
+        if ($check_user_stmt) {
+            if ($row = sqlsrv_fetch_array($check_user_stmt, SQLSRV_FETCH_ASSOC)) {
+                $other_user_id = $row['user_id'];
+                $check_admin_sql = "SELECT role_id FROM users WHERE user_id = ?";
+                $check_admin_stmt = sqlsrv_query($conn, $check_admin_sql, array($other_user_id));
+                if ($check_admin_stmt) {
+                    if ($admin_row = sqlsrv_fetch_array($check_admin_stmt, SQLSRV_FETCH_ASSOC)) {
+                        if ($admin_row['role_id'] != 1) {
+                            // Only load messages if not admin
+                            $archived_messages_result = getArchivedAdminMessages($conn, $selected_chat_id, $user_id);
+                            if ($archived_messages_result['success']) {
+                                $chat_messages = $archived_messages_result['messages'];
+                                $selected_chat = $archived_messages_result['chat_info'];
+                            } else {
+                                $selected_chat_id = null;
+                                $error = $archived_messages_result['error'];
+                            }
+                        } else {
+                            $selected_chat_id = null;
+                            $error = "Cannot view archived chats with other admins.";
+                        }
+                    }
+                    sqlsrv_free_stmt($check_admin_stmt);
+                }
+            }
+            sqlsrv_free_stmt($check_user_stmt);
         }
     }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$view_archived) {
+    $is_ajax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+               strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
+    
     if(isset($_POST['send_message'])) {
         $chat_id = (int)$_POST['chat_id'];
         $message = trim($_POST['message']);
         
         if(empty($message)) {
+            if ($is_ajax) {
+                echo json_encode(['success' => false, 'error' => 'Empty message']);
+                exit();
+            }
             $error = "Please enter a message.";
         } else {
             if(sendAdminMessage($conn, $chat_id, $user_id, $message)) {
                 updateAdminChatActivity($conn, $chat_id);
-                $success = "Message sent!";
-                header("Location: adminpanel.php?chat_id=$chat_id");
+                $sql = "SELECT TOP 1 am.*, u.full_name, u.username 
+                        FROM admin_messages am 
+                        JOIN users u ON am.sender_id = u.user_id 
+                        WHERE am.chat_id = ? 
+                        ORDER BY am.created_at DESC";
+                $params = array($chat_id);
+                $stmt = sqlsrv_query($conn, $sql, $params);
+                
+                if ($stmt && $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+                    if ($is_ajax) {
+                        echo json_encode([
+                            'success' => true,
+                            'message' => [
+                                'message_id' => $row['message_id'],
+                                'sender_id' => $row['sender_id'],
+                                'full_name' => $row['full_name'],
+                                'message' => $row['message'],
+                                'created_at' => $row['created_at'] instanceof DateTime 
+                                    ? $row['created_at']->format('Y-m-d H:i:s') 
+                                    : $row['created_at'],
+                                'is_sent' => true
+                            ]
+                        ]);
+                        exit();
+                    } else {
+                        $success = "Message sent!";
+                        header("Location: " . basename($_SERVER['PHP_SELF']) . "?chat_id=$chat_id");
+                        exit();
+                    }
+                }
+            }
+            if ($is_ajax) {
+                echo json_encode(['success' => false, 'error' => 'Failed to send message']);
                 exit();
             } else {
                 $error = "Failed to send message.";
@@ -125,53 +217,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$view_archived) {
         }
     }
     
-    if(isset($_POST['start_chat'])) {
-        $target_user_id = (int)$_POST['user_id'];
-        $chat_id = createAdminChatConversation($conn, $target_user_id, $user_id);
-        if($chat_id) {
-            header("Location: adminpanel.php?chat_id=$chat_id");
-            exit();
-        } else {
-            $error = "Failed to start chat.";
-        }
-    }
-    
-    if(isset($_POST['archive_chat'])) {
+    if(isset($_POST['archive_chat']) && isAdmin()) {
         $chat_id = (int)$_POST['chat_id'];
-        if(archiveAdminChatImmediately($conn, $chat_id)) {
-            $success = "Chat archived successfully!";
-            header("Location: adminpanel.php");
-            exit();
-        } else {
-            $error = "Failed to archive chat.";
+        
+        // Check if this chat is with a non-admin before archiving
+        $check_user_sql = "SELECT user_id, admin_id FROM admin_chats WHERE chat_id = ?";
+        $check_user_stmt = sqlsrv_query($conn, $check_user_sql, array($chat_id));
+        if ($check_user_stmt) {
+            if ($row = sqlsrv_fetch_array($check_user_stmt, SQLSRV_FETCH_ASSOC)) {
+                // Determine the other user
+                if ($row['user_id'] == $user_id) {
+                    $other_user_id = $row['admin_id'];
+                } else {
+                    $other_user_id = $row['user_id'];
+                }
+                
+                $check_admin_sql = "SELECT role_id FROM users WHERE user_id = ?";
+                $check_admin_stmt = sqlsrv_query($conn, $check_admin_sql, array($other_user_id));
+                if ($check_admin_stmt) {
+                    if ($admin_row = sqlsrv_fetch_array($check_admin_stmt, SQLSRV_FETCH_ASSOC)) {
+                        if ($admin_row['role_id'] != 1) {
+                            // Only archive if not admin
+                            if(archiveAdminChatImmediately($conn, $chat_id)) {
+                                $success = "Chat archived successfully!";
+                                header("Location: " . basename($_SERVER['PHP_SELF']));
+                                exit();
+                            }
+                        } else {
+                            $error = "Cannot archive admin-to-admin chats.";
+                        }
+                    }
+                    sqlsrv_free_stmt($check_admin_stmt);
+                }
+            }
+            sqlsrv_free_stmt($check_user_stmt);
         }
+        $error = "Failed to archive chat.";
     }
 }
 
+// DISABLED: Admin-to-admin chat is completely disabled
 if(isset($_GET['start_chat']) && !$view_archived) {
     $target_user_id = (int)$_GET['start_chat'];
-    $chat_id = createAdminChatConversation($conn, $target_user_id, $user_id);
-    if($chat_id) {
-        header("Location: adminpanel.php?chat_id=$chat_id");
-        exit();
+    
+    // Check if target user is an admin
+    $check_admin_sql = "SELECT role_id FROM users WHERE user_id = ?";
+    $check_admin_stmt = sqlsrv_query($conn, $check_admin_sql, array($target_user_id));
+    $is_target_admin = false;
+    if ($check_admin_stmt) {
+        if ($row = sqlsrv_fetch_array($check_admin_stmt, SQLSRV_FETCH_ASSOC)) {
+            $is_target_admin = ($row['role_id'] == 1);
+        }
+        sqlsrv_free_stmt($check_admin_stmt);
+    }
+    
+    if ($is_target_admin) {
+        $error = "Chatting with other operators is disabled. You can only chat with regular users.";
     } else {
-        $error = "Failed to start chat.";
+        // Only allow chat with non-admins
+        // Check if chat already exists
+        $check_sql = "SELECT TOP 1 chat_id 
+                      FROM admin_chats 
+                      WHERE (admin_id = ? AND user_id = ?) 
+                         OR (admin_id = ? AND user_id = ?)";
+        $check_params = array($user_id, $target_user_id, $target_user_id, $user_id);
+        $check_stmt = sqlsrv_query($conn, $check_sql, $check_params);
+        
+        $chat_id = false;
+        if ($check_stmt) {
+            if ($row = sqlsrv_fetch_array($check_stmt, SQLSRV_FETCH_ASSOC)) {
+                $chat_id = $row['chat_id'];
+            }
+            sqlsrv_free_stmt($check_stmt);
+        }
+        
+        if (!$chat_id) {
+            // Create new chat
+            $insert_sql = "INSERT INTO admin_chats (admin_id, user_id, created_at) 
+                           VALUES (?, ?, GETDATE())";
+            $insert_params = array($user_id, $target_user_id);
+            $insert_stmt = sqlsrv_query($conn, $insert_sql, $insert_params);
+            
+            if ($insert_stmt) {
+                $identity_sql = "SELECT SCOPE_IDENTITY() as chat_id";
+                $identity_stmt = sqlsrv_query($conn, $identity_sql);
+                if ($identity_stmt) {
+                    if ($row = sqlsrv_fetch_array($identity_stmt, SQLSRV_FETCH_ASSOC)) {
+                        $chat_id = $row['chat_id'];
+                        
+                        // Add welcome message
+                        $welcome_sql = "INSERT INTO admin_messages (chat_id, sender_id, message, created_at, is_read, is_archived) 
+                                        VALUES (?, ?, 'Chat started', GETDATE(), 0, 0)";
+                        $welcome_params = array($chat_id, $user_id);
+                        $welcome_stmt = sqlsrv_query($conn, $welcome_sql, $welcome_params);
+                        if ($welcome_stmt) {
+                            sqlsrv_free_stmt($welcome_stmt);
+                        }
+                    }
+                    sqlsrv_free_stmt($identity_stmt);
+                }
+                sqlsrv_free_stmt($insert_stmt);
+            }
+        }
+        
+        if ($chat_id) {
+            header("Location: adminpanel.php?chat_id=" . $chat_id);
+            exit();
+        } else {
+            $error = "Failed to start chat. Please try again.";
+        }
     }
 }
 
+// FIXED: Get both user_id and admin_id to avoid undefined array key warning
 if($selected_chat_id && !$view_archived) {
-    $chat_messages = getAdminChatMessages($conn, $selected_chat_id);
-    
-    foreach($admin_chats as $chat) {
-        if($chat['chat_id'] == $selected_chat_id) {
-            $selected_chat = $chat;
-            break;
+    // Get both user_id and admin_id from the chat
+    $check_user_sql = "SELECT user_id, admin_id FROM admin_chats WHERE chat_id = ?";
+    $check_user_stmt = sqlsrv_query($conn, $check_user_sql, array($selected_chat_id));
+    if ($check_user_stmt) {
+        if ($row = sqlsrv_fetch_array($check_user_stmt, SQLSRV_FETCH_ASSOC)) {
+            // Determine who is the other user
+            if ($row['user_id'] == $user_id) {
+                $other_user_id = $row['admin_id'];
+            } else {
+                $other_user_id = $row['user_id'];
+            }
+            
+            $check_admin_sql = "SELECT role_id FROM users WHERE user_id = ?";
+            $check_admin_stmt = sqlsrv_query($conn, $check_admin_sql, array($other_user_id));
+            if ($check_admin_stmt) {
+                if ($admin_row = sqlsrv_fetch_array($check_admin_stmt, SQLSRV_FETCH_ASSOC)) {
+                    if ($admin_row['role_id'] != 1) {
+                        // Only load messages if not admin
+                        $chat_messages = getAdminChatMessages($conn, $selected_chat_id);
+                        foreach($admin_chats as $chat) {
+                            if($chat['chat_id'] == $selected_chat_id) {
+                                $selected_chat = $chat;
+                                break;
+                            }
+                        }
+                        if($selected_chat) {
+                            markAdminMessagesAsRead($conn, $selected_chat_id, $user_id);
+                            updateAdminChatActivity($conn, $selected_chat_id);
+                        }
+                    } else {
+                        $selected_chat_id = null;
+                        $error = "Cannot view chats with other operators.";
+                    }
+                }
+                sqlsrv_free_stmt($check_admin_stmt);
+            }
         }
-    }
-    
-    if($selected_chat) {
-        markAdminMessagesAsRead($conn, $selected_chat_id, $user_id);
-        updateAdminChatActivity($conn, $selected_chat_id);
+        sqlsrv_free_stmt($check_user_stmt);
     }
 }
 
@@ -185,6 +382,7 @@ $unread_count = getUnreadAdminMessageCount($conn, $user_id, true);
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin Panel - Chat System</title>
 <style>
+/* ============ YOUR EXISTING CSS (keep as is) ============ */
 * { box-sizing: border-box; margin:0; padding:0; font-family:"Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
 body { min-height: 100vh; display: flex; flex-direction: column; background-color: #edf4fc; }
 .header { position: fixed; top: 0; left: 0; width: 100%; background-color: #07417f; color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-bottom: 3px solid #2b6cb0; }
@@ -194,12 +392,13 @@ body { min-height: 100vh; display: flex; flex-direction: column; background-colo
 ul.nav { display: flex; list-style: none; gap: 8px; }
 ul.nav li a { display: block; color: white; text-decoration: none; padding: 10px 18px; font-weight: 600; border-radius: 6px; transition: all 0.2s; }
 ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
+ul.nav li a.active { background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); }
 .content { flex: 1; margin-top: 100px; padding: 20px; }
 .container { display: flex; gap: 20px; height: calc(100vh - 140px); }
 .sidebar { width: 300px; background: white; border-radius: 10px; padding: 20px; display: flex; flex-direction: column; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
 .sidebar h3 { color: #2b6cb0; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0; }
 .online-users-list { flex: 1; overflow-y: auto; margin-bottom: 20px; }
-.user-item { display: flex; align-items: center; padding: 10px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; position: relative; }
+.user-item { display: flex; align-items: center; padding: 10px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; position: relative; text-decoration: none; color: inherit; }
 .user-item:hover { background-color: #f7fafc; border-color: #e2e8f0; }
 .user-item.active { background-color: #e8f4fd; border-color: #2b6cb0; }
 .user-avatar { width: 40px; height: 40px; border-radius: 50%; background: #2b6cb0; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 12px; }
@@ -236,12 +435,10 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
 .no-chat-selected { display: flex; align-items: center; justify-content: center; height: 100%; color: #a0aec0; font-style: italic; text-align: center; padding: 40px; }
 .error-message { background-color: #fed7d7; color: #742a2a; padding: 10px; border-radius: 6px; margin-bottom: 15px; border-left: 4px solid #e53e3e; }
 .success-message { background-color: #c6f6d5; color: #22543d; padding: 10px; border-radius: 6px; margin-bottom: 15px; border-left: 4px solid #38a169; }
-.admin-section { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0; }
-.admin-section h4 { color: #4a5568; margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
-.admin-item { display: flex; align-items: center; padding: 8px; border-radius: 6px; margin-bottom: 5px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; position: relative; }
-.admin-item:hover { background-color: #f7fafc; border-color: #e2e8f0; }
-.admin-avatar { width: 35px; height: 35px; border-radius: 50%; background: #2b6cb0; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 10px; font-size: 14px; }
-.admin-name { flex: 1; font-weight: 500; color: #2d3748; font-size: 14px; }
+
+/* REMOVED: Admin section styles are now hidden */
+.admin-section, .admin-item, .admin-avatar, .admin-name { display: none; }
+
 .start-chat-btn { background-color: #38a169; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; transition: background-color 0.2s; }
 .start-chat-btn:hover { background-color: #2f855a; }
 @media(max-width: 900px){ .container { flex-direction: column; } .sidebar, .main-chat { width: 100%; height: auto; } }
@@ -292,18 +489,19 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
 .notification-indicator { position: relative; }
 .nav-notification-badge { background-color: #e53e3e; color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; min-width: 18px; text-align: center; margin-left: 5px; animation: pulse 2s infinite; display: inline-block; }
 .hierarchy-tooltip { position: absolute; background: #2d3748; color: white; padding: 10px; border-radius: 6px; font-size: 12px; width: 300px; z-index: 9999; box-shadow: 0 3px 10px rgba(0,0,0,0.3); opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; top: 100%; left: 0; margin-top: 5px; border: 1px solid #4a5568; }
-.chat-item:hover .hierarchy-tooltip, .user-item:hover .hierarchy-tooltip, .admin-item:hover .hierarchy-tooltip, .message-sender:hover .hierarchy-tooltip, .notification-item:hover .hierarchy-tooltip { opacity: 1; visibility: visible; }
+.chat-item:hover .hierarchy-tooltip, .user-item:hover .hierarchy-tooltip, .message-sender:hover .hierarchy-tooltip, .notification-item:hover .hierarchy-tooltip { opacity: 1; visibility: visible; }
 .hierarchy-tooltip h4 { color: white; margin: 0 0 8px 0; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px; }
 .hierarchy-info { margin: 5px 0; }
 .hierarchy-row { display: flex; margin: 3px 0; align-items: flex-start; }
 .hierarchy-label { width: 90px; color: #a0aec0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; }
 .hierarchy-value { flex: 1; color: white; font-weight: 500; font-size: 11px; line-height: 1.3; }
 .hierarchy-divider { height: 1px; background: rgba(255,255,255,0.1); margin: 5px 0; }
-.chat-item, .user-item, .admin-item, .notification-item, .message-sender { position: relative; }
+.chat-item, .user-item, .notification-item, .message-sender { position: relative; }
 </style>
 </head>
 <body>
 
+<!-- ============ HEADER ============ -->
 <div class="header">
     <div class="logo">
         <img src="hospitalLogo.png" alt="Hospital Logo">
@@ -315,9 +513,9 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
             <?php if (isAdmin()): ?>
                 <li><a href="createpage.php">Create page</a></li>
                 <li><a href="editpage.php">Edit page</a></li>
-                <li><a href="adminpanel.php" class="notification-indicator">Admin Panel <?php if ($admin_notifications_count > 0): ?><span class="nav-notification-badge"><?php echo $admin_notifications_count; ?></span><?php endif; ?></a></li>
+                <li><a href="adminpanel.php" class="notification-indicator <?php echo basename($_SERVER['PHP_SELF']) == 'adminpanel.php' ? 'active' : ''; ?>">Operator Panel <?php if ($admin_notifications_count > 0): ?><span class="nav-notification-badge"><?php echo $admin_notifications_count; ?></span><?php endif; ?></a></li>
             <?php else: ?>
-                <li><a href="adminchat.php">Chat with Admin</a></li>
+                <li><a href="adminchat.php">Chat with an Operator</a></li>
             <?php endif; ?>
             <li><a href="profilepage.php">Profile</a></li>
             <li><a href="logout.php">Logout (<?php echo getUserName(); ?>)</a></li>
@@ -349,32 +547,14 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                             </div>
                         </div>
                         
+                        <!-- NOTIFICATION ITEM TOOLTIP -->
                         <div class="hierarchy-tooltip">
-                            <h4><?php echo htmlspecialchars($user_hierarchy['full_name']); ?></h4>
+                            <h4><?php echo htmlspecialchars($user_hierarchy['full_name'] ?? 'Unknown User'); ?></h4>
                             <div class="hierarchy-info">
-                                <div class="hierarchy-row"><div class="hierarchy-label">Email:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['email'] ?? 'N/A'); ?></div></div>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Role:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['role_name'] ?? 'N/A'); ?><?php if ($user_hierarchy['is_head']): ?><span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span><?php endif; ?></div></div>
-                                <?php if ($user_hierarchy['current_unit']): ?>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Current Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['current_unit']); ?><?php if ($user_hierarchy['unit_type']): ?><span style="color: #a0aec0; font-size: 10px;">(<?php echo $user_hierarchy['unit_type']; ?>)</span><?php endif; ?></div></div>
-                                <?php endif; ?>
-                                <?php if ($user_hierarchy['is_head'] && !empty($user_hierarchy['heads_contacts'])): ?>
-                                <div class="hierarchy-divider"></div>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Heads:</div><div class="hierarchy-value"><?php 
-                                $head_units = [];
-                                foreach($user_hierarchy['heads_contacts'] as $contact) {
-                                    $unit_name = $contact['unit_name'] ?? $contact['division_name'] ?? $contact['department_name'] ?? $contact['office_name'] ?? 'Unit';
-                                    $head_units[] = $unit_name . ' (' . $contact['unit_type'] . ')';
-                                }
-                                echo htmlspecialchars(implode(', ', array_slice($head_units, 0, 3)));
-                                if (count($head_units) > 3) { echo ' +' . (count($head_units) - 3) . ' more'; } ?></div></div>
-                                <?php endif; ?>
-                                <?php if ($user_hierarchy['division']): ?><div class="hierarchy-row"><div class="hierarchy-label">Division:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['division']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['department']): ?><div class="hierarchy-row"><div class="hierarchy-label">Department:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['department']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['unit']): ?><div class="hierarchy-row"><div class="hierarchy-label">Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['unit']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['office']): ?><div class="hierarchy-row"><div class="hierarchy-label">Office:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['office']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['head_info'] && isset($user_hierarchy['head_info']['head_name']) && !$user_hierarchy['is_head']): ?>
-                                <div class="hierarchy-divider"></div>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Head:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['head_info']['head_name']); ?></div></div>
+                                <div class="hierarchy-row"><div class="hierarchy-label">Email:</div><div class="hierarchy-value"><?php echo htmlspecialchars(!empty($user_hierarchy['email']) ? $user_hierarchy['email'] : 'N/A'); ?></div></div>
+                                <div class="hierarchy-row"><div class="hierarchy-label">Role:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['role_name'] ?? 'N/A'); ?><?php if ($user_hierarchy['is_head'] ?? false): ?><span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span><?php endif; ?></div></div>
+                                <?php if (!empty($user_hierarchy['current_unit'] ?? '')): ?>
+                                <div class="hierarchy-row"><div class="hierarchy-label">Current Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['current_unit']); ?><?php if (!empty($user_hierarchy['unit_type'] ?? '')): ?><span style="color: #a0aec0; font-size: 10px;">(<?php echo htmlspecialchars($user_hierarchy['unit_type']); ?>)</span><?php endif; ?></div></div>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -393,57 +573,19 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
 <div class="content">
     <div class="container">
         <div class="sidebar">
-            <h3>Available Admins</h3>
-            <div class="admin-section">
-                <h4>Chat with Other Admins</h4>
-                <?php foreach($available_admins as $admin): 
-                    $admin_hierarchy = getUserHierarchyInfo($conn, $admin['user_id']);
-                ?>
-                <div class="admin-item" onclick="location.href='adminpanel.php?start_chat=<?php echo $admin['user_id']; ?>'">
-                    <div class="admin-avatar"><?php echo strtoupper(substr($admin['full_name'], 0, 1)); ?></div>
-                    <div class="admin-name"><?php echo htmlspecialchars($admin['full_name']); ?></div>
-                    <?php if($admin['unread_count'] > 0): ?><span class="unread-badge"><?php echo $admin['unread_count']; ?></span><?php endif; ?>
-                    
-                    <div class="hierarchy-tooltip">
-                        <h4><?php echo htmlspecialchars($admin_hierarchy['full_name']); ?></h4>
-                        <div class="hierarchy-info">
-                            <div class="hierarchy-row"><div class="hierarchy-label">Email:</div><div class="hierarchy-value"><?php echo htmlspecialchars($admin_hierarchy['email'] ?? 'N/A'); ?></div></div>
-                            <div class="hierarchy-row"><div class="hierarchy-label">Role:</div><div class="hierarchy-value"><?php echo htmlspecialchars($admin_hierarchy['role_name'] ?? 'Admin'); ?><?php if ($admin_hierarchy['is_head']): ?><span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span><?php endif; ?></div></div>
-                            <?php if ($admin_hierarchy['current_unit']): ?>
-                            <div class="hierarchy-row"><div class="hierarchy-label">Current Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($admin_hierarchy['current_unit']); ?><?php if ($admin_hierarchy['unit_type']): ?><span style="color: #a0aec0; font-size: 10px;">(<?php echo $admin_hierarchy['unit_type']; ?>)</span><?php endif; ?></div></div>
-                            <?php endif; ?>
-                            <?php if ($admin_hierarchy['is_head'] && !empty($admin_hierarchy['heads_contacts'])): ?>
-                            <div class="hierarchy-divider"></div>
-                            <div class="hierarchy-row"><div class="hierarchy-label">Heads:</div><div class="hierarchy-value"><?php 
-                            $head_units = [];
-                            foreach($admin_hierarchy['heads_contacts'] as $contact) {
-                                $unit_name = $contact['unit_name'] ?? $contact['division_name'] ?? $contact['department_name'] ?? $contact['office_name'] ?? 'Unit';
-                                $head_units[] = $unit_name . ' (' . $contact['unit_type'] . ')';
-                            }
-                            echo htmlspecialchars(implode(', ', array_slice($head_units, 0, 3)));
-                            if (count($head_units) > 3) { echo ' +' . (count($head_units) - 3) . ' more'; } ?></div></div>
-                            <?php endif; ?>
-                            <?php if ($admin_hierarchy['division']): ?><div class="hierarchy-row"><div class="hierarchy-label">Division:</div><div class="hierarchy-value"><?php echo htmlspecialchars($admin_hierarchy['division']); ?></div></div><?php endif; ?>
-                            <?php if ($admin_hierarchy['department']): ?><div class="hierarchy-row"><div class="hierarchy-label">Department:</div><div class="hierarchy-value"><?php echo htmlspecialchars($admin_hierarchy['department']); ?></div></div><?php endif; ?>
-                            <?php if ($admin_hierarchy['unit']): ?><div class="hierarchy-row"><div class="hierarchy-label">Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($admin_hierarchy['unit']); ?></div></div><?php endif; ?>
-                            <?php if ($admin_hierarchy['office']): ?><div class="hierarchy-row"><div class="hierarchy-label">Office:</div><div class="hierarchy-value"><?php echo htmlspecialchars($admin_hierarchy['office']); ?></div></div><?php endif; ?>
-                            <?php if ($admin_hierarchy['head_info'] && isset($admin_hierarchy['head_info']['head_name']) && !$admin_hierarchy['is_head']): ?>
-                            <div class="hierarchy-divider"></div>
-                            <div class="hierarchy-row"><div class="hierarchy-label">Head:</div><div class="hierarchy-value"><?php echo htmlspecialchars($admin_hierarchy['head_info']['head_name']); ?></div></div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-                <?php endforeach; ?>
-            </div>
+            
+            <!-- REMOVED: Admin section completely removed -->
+            <!-- No more "Available Operators" or "Chat with Other Operators" -->
             
             <h3>Online Users (<?php echo count($online_users); ?>)</h3>
             <div class="online-users-list">
-                <?php foreach($online_users as $user): 
-                    if($user['user_id'] == $user_id) continue;
+                <?php 
+                $has_online_users = false;
+                foreach($online_users as $user): 
+                    $has_online_users = true;
                     $user_hierarchy = getUserHierarchyInfo($conn, $user['user_id']);
                 ?>
-                <div class="user-item" onclick="location.href='adminpanel.php?start_chat=<?php echo $user['user_id']; ?>'">
+                <a href="?start_chat=<?php echo $user['user_id']; ?>" class="user-item">
                     <div class="user-avatar"><?php echo strtoupper(substr($user['full_name'], 0, 1)); ?></div>
                     <div class="user-info">
                         <div class="user-name"><?php echo htmlspecialchars($user['full_name']); ?></div>
@@ -451,129 +593,149 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                     </div>
                     <div class="online-indicator"></div>
                     
+                    <!-- USER ITEM TOOLTIP -->
                     <div class="hierarchy-tooltip">
-                        <h4><?php echo htmlspecialchars($user_hierarchy['full_name']); ?></h4>
+                        <h4><?php echo htmlspecialchars($user_hierarchy['full_name'] ?? 'Unknown User'); ?></h4>
                         <div class="hierarchy-info">
-                            <div class="hierarchy-row"><div class="hierarchy-label">Email:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['email'] ?? 'N/A'); ?></div></div>
-                            <div class="hierarchy-row"><div class="hierarchy-label">Role:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['role_name'] ?? 'N/A'); ?><?php if ($user_hierarchy['is_head']): ?><span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span><?php endif; ?></div></div>
-                            <?php if ($user_hierarchy['current_unit']): ?>
-                            <div class="hierarchy-row"><div class="hierarchy-label">Current Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['current_unit']); ?><?php if ($user_hierarchy['unit_type']): ?><span style="color: #a0aec0; font-size: 10px;">(<?php echo $user_hierarchy['unit_type']; ?>)</span><?php endif; ?></div></div>
-                            <?php endif; ?>
-                            <?php if ($user_hierarchy['is_head'] && !empty($user_hierarchy['heads_contacts'])): ?>
-                            <div class="hierarchy-divider"></div>
-                            <div class="hierarchy-row"><div class="hierarchy-label">Heads:</div><div class="hierarchy-value"><?php 
-                            $head_units = [];
-                            foreach($user_hierarchy['heads_contacts'] as $contact) {
-                                $unit_name = $contact['unit_name'] ?? $contact['division_name'] ?? $contact['department_name'] ?? $contact['office_name'] ?? 'Unit';
-                                $head_units[] = $unit_name . ' (' . $contact['unit_type'] . ')';
-                            }
-                            echo htmlspecialchars(implode(', ', array_slice($head_units, 0, 3)));
-                            if (count($head_units) > 3) { echo ' +' . (count($head_units) - 3) . ' more'; } ?></div></div>
-                            <?php endif; ?>
-                            <?php if ($user_hierarchy['division']): ?><div class="hierarchy-row"><div class="hierarchy-label">Division:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['division']); ?></div></div><?php endif; ?>
-                            <?php if ($user_hierarchy['department']): ?><div class="hierarchy-row"><div class="hierarchy-label">Department:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['department']); ?></div></div><?php endif; ?>
-                            <?php if ($user_hierarchy['unit']): ?><div class="hierarchy-row"><div class="hierarchy-label">Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['unit']); ?></div></div><?php endif; ?>
-                            <?php if ($user_hierarchy['office']): ?><div class="hierarchy-row"><div class="hierarchy-label">Office:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['office']); ?></div></div><?php endif; ?>
-                            <?php if ($user_hierarchy['head_info'] && isset($user_hierarchy['head_info']['head_name']) && !$user_hierarchy['is_head']): ?>
-                            <div class="hierarchy-divider"></div>
-                            <div class="hierarchy-row"><div class="hierarchy-label">Head:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['head_info']['head_name']); ?></div></div>
+                            <div class="hierarchy-row">
+                                <div class="hierarchy-label">Email:</div>
+                                <div class="hierarchy-value">
+                                    <?php echo htmlspecialchars(!empty($user_hierarchy['email']) ? $user_hierarchy['email'] : 'N/A'); ?>
+                                </div>
+                            </div>
+                            <div class="hierarchy-row">
+                                <div class="hierarchy-label">Role:</div>
+                                <div class="hierarchy-value">
+                                    <?php echo htmlspecialchars($user_hierarchy['role_name'] ?? 'N/A'); ?>
+                                    <?php if ($user_hierarchy['is_head'] ?? false): ?>
+                                        <span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <?php if (!empty($user_hierarchy['current_unit'] ?? '')): ?>
+                            <div class="hierarchy-row">
+                                <div class="hierarchy-label">Current Unit:</div>
+                                <div class="hierarchy-value">
+                                    <?php echo htmlspecialchars($user_hierarchy['current_unit']); ?>
+                                    <?php if (!empty($user_hierarchy['unit_type'] ?? '')): ?>
+                                        <span style="color: #a0aec0; font-size: 10px;">(<?php echo htmlspecialchars($user_hierarchy['unit_type']); ?>)</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
                             <?php endif; ?>
                         </div>
                     </div>
-                </div>
+                </a>
                 <?php endforeach; ?>
+                <?php if(!$has_online_users): ?>
+                    <div style="color: #a0aec0; padding: 10px; text-align: center;">No online users</div>
+                <?php endif; ?>
             </div>
             
-            <h3>Your Chats</h3>
+            <h3>Your Chats (with users only)</h3>
             <div class="chat-list">
                 <?php if (!$view_archived): ?>
-                    <?php foreach($admin_chats as $chat): 
-                        $other_user_id = getArrayValue($chat, 'user_id');
-                        $user_hierarchy = getUserHierarchyInfo($conn, $other_user_id);
-                    ?>
-                    <a href="adminpanel.php?chat_id=<?php echo getArrayValue($chat, 'chat_id'); ?>" class="chat-item <?php echo $selected_chat_id == getArrayValue($chat, 'chat_id') ? 'active' : ''; ?>">
-                        <div class="chat-avatar"><?php echo strtoupper(substr(getArrayValue($chat, 'full_name', ''), 0, 1)); ?></div>
-                        <div class="chat-info">
-                            <div class="chat-name"><?php echo htmlspecialchars(getArrayValue($chat, 'full_name', 'Unknown User')); ?></div>
-                            <div class="chat-preview"><?php echo htmlspecialchars(substr(getArrayValue($chat, 'last_message', 'No messages yet'), 0, 30)); ?></div>
-                        </div>
-                        <div class="chat-time"><?php echo safeDateFormat(getArrayValue($chat, 'last_message_time'), 'H:i'); ?></div>
-                        
-                        <div class="hierarchy-tooltip">
-                            <h4><?php echo htmlspecialchars($user_hierarchy['full_name']); ?></h4>
-                            <div class="hierarchy-info">
-                                <div class="hierarchy-row"><div class="hierarchy-label">Email:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['email'] ?? 'N/A'); ?></div></div>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Role:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['role_name'] ?? 'N/A'); ?><?php if ($user_hierarchy['is_head']): ?><span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span><?php endif; ?></div></div>
-                                <?php if ($user_hierarchy['current_unit']): ?>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Current Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['current_unit']); ?><?php if ($user_hierarchy['unit_type']): ?><span style="color: #a0aec0; font-size: 10px;">(<?php echo $user_hierarchy['unit_type']; ?>)</span><?php endif; ?></div></div>
-                                <?php endif; ?>
-                                <?php if ($user_hierarchy['is_head'] && !empty($user_hierarchy['heads_contacts'])): ?>
-                                <div class="hierarchy-divider"></div>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Heads:</div><div class="hierarchy-value"><?php 
-                                $head_units = [];
-                                foreach($user_hierarchy['heads_contacts'] as $contact) {
-                                    $unit_name = $contact['unit_name'] ?? $contact['division_name'] ?? $contact['department_name'] ?? $contact['office_name'] ?? 'Unit';
-                                    $head_units[] = $unit_name . ' (' . $contact['unit_type'] . ')';
-                                }
-                                echo htmlspecialchars(implode(', ', array_slice($head_units, 0, 3)));
-                                if (count($head_units) > 3) { echo ' +' . (count($head_units) - 3) . ' more'; } ?></div></div>
-                                <?php endif; ?>
-                                <?php if ($user_hierarchy['division']): ?><div class="hierarchy-row"><div class="hierarchy-label">Division:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['division']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['department']): ?><div class="hierarchy-row"><div class="hierarchy-label">Department:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['department']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['unit']): ?><div class="hierarchy-row"><div class="hierarchy-label">Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['unit']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['office']): ?><div class="hierarchy-row"><div class="hierarchy-label">Office:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['office']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['head_info'] && isset($user_hierarchy['head_info']['head_name']) && !$user_hierarchy['is_head']): ?>
-                                <div class="hierarchy-divider"></div>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Head:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['head_info']['head_name']); ?></div></div>
-                                <?php endif; ?>
+                    <?php if(!empty($admin_chats)): ?>
+                        <?php foreach($admin_chats as $chat): 
+                            $other_user_id = getArrayValue($chat, 'user_id');
+                            $user_hierarchy = getUserHierarchyInfo($conn, $other_user_id);
+                        ?>
+                        <a href="?chat_id=<?php echo getArrayValue($chat, 'chat_id'); ?>" class="chat-item <?php echo $selected_chat_id == getArrayValue($chat, 'chat_id') ? 'active' : ''; ?>">
+                            <div class="chat-avatar"><?php echo strtoupper(substr(getArrayValue($chat, 'full_name', ''), 0, 1)); ?></div>
+                            <div class="chat-info">
+                                <div class="chat-name"><?php echo htmlspecialchars(getArrayValue($chat, 'full_name', 'Unknown User')); ?></div>
+                                <div class="chat-preview"><?php echo htmlspecialchars(substr(getArrayValue($chat, 'last_message', 'No messages yet'), 0, 30)); ?></div>
                             </div>
-                        </div>
-                     </a>
-                    <?php endforeach; ?>
+                            <div class="chat-time"><?php echo safeDateFormat(getArrayValue($chat, 'last_message_time'), 'H:i'); ?></div>
+                            
+                            <!-- ACTIVE CHAT ITEM TOOLTIP -->
+                            <div class="hierarchy-tooltip">
+                                <h4><?php echo htmlspecialchars($user_hierarchy['full_name'] ?? 'Unknown User'); ?></h4>
+                                <div class="hierarchy-info">
+                                    <div class="hierarchy-row">
+                                        <div class="hierarchy-label">Email:</div>
+                                        <div class="hierarchy-value">
+                                            <?php echo htmlspecialchars(!empty($user_hierarchy['email']) ? $user_hierarchy['email'] : 'N/A'); ?>
+                                        </div>
+                                    </div>
+                                    <div class="hierarchy-row">
+                                        <div class="hierarchy-label">Role:</div>
+                                        <div class="hierarchy-value">
+                                            <?php echo htmlspecialchars($user_hierarchy['role_name'] ?? 'N/A'); ?>
+                                            <?php if ($user_hierarchy['is_head'] ?? false): ?>
+                                                <span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <?php if (!empty($user_hierarchy['current_unit'] ?? '')): ?>
+                                    <div class="hierarchy-row">
+                                        <div class="hierarchy-label">Current Unit:</div>
+                                        <div class="hierarchy-value">
+                                            <?php echo htmlspecialchars($user_hierarchy['current_unit']); ?>
+                                            <?php if (!empty($user_hierarchy['unit_type'] ?? '')): ?>
+                                                <span style="color: #a0aec0; font-size: 10px;">(<?php echo htmlspecialchars($user_hierarchy['unit_type']); ?>)</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                         </a>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <div style="color: #a0aec0; padding: 10px; text-align: center;">No active chats with users</div>
+                    <?php endif; ?>
                 <?php else: ?>
-                    <?php foreach($archived_chats as $chat): 
-                        $other_user_id = getArrayValue($chat, 'user_id');
-                        $user_hierarchy = getUserHierarchyInfo($conn, $other_user_id);
-                    ?>
-                    <a href="adminpanel.php?view=archived&chat_id=<?php echo getArrayValue($chat, 'chat_id'); ?>" class="chat-item <?php echo $selected_chat_id == getArrayValue($chat, 'chat_id') ? 'active' : ''; ?>">
-                        <div class="chat-avatar" style="background-color: #718096;"><?php echo strtoupper(substr(getArrayValue($chat, 'full_name', ''), 0, 1)); ?></div>
-                        <div class="chat-info">
-                            <div class="chat-name"><?php echo htmlspecialchars(getArrayValue($chat, 'full_name', 'Unknown User')); ?> <span class="archive-badge">Archived</span></div>
-                            <div class="chat-preview"><?php echo htmlspecialchars(substr(getArrayValue($chat, 'last_message', 'No messages'), 0, 30)); ?></div>
-                        </div>
-                        <div class="chat-time"><?php echo safeDateFormat(getArrayValue($chat, 'archived_at'), 'M d'); ?></div>
-                        
-                        <div class="hierarchy-tooltip">
-                            <h4><?php echo htmlspecialchars($user_hierarchy['full_name']); ?></h4>
-                            <div class="hierarchy-info">
-                                <div class="hierarchy-row"><div class="hierarchy-label">Email:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['email'] ?? 'N/A'); ?></div></div>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Role:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['role_name'] ?? 'N/A'); ?><?php if ($user_hierarchy['is_head']): ?><span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span><?php endif; ?></div></div>
-                                <?php if ($user_hierarchy['current_unit']): ?>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Current Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['current_unit']); ?><?php if ($user_hierarchy['unit_type']): ?><span style="color: #a0aec0; font-size: 10px;">(<?php echo $user_hierarchy['unit_type']; ?>)</span><?php endif; ?></div></div>
-                                <?php endif; ?>
-                                <?php if ($user_hierarchy['is_head'] && !empty($user_hierarchy['heads_contacts'])): ?>
-                                <div class="hierarchy-divider"></div>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Heads:</div><div class="hierarchy-value"><?php 
-                                $head_units = [];
-                                foreach($user_hierarchy['heads_contacts'] as $contact) {
-                                    $unit_name = $contact['unit_name'] ?? $contact['division_name'] ?? $contact['department_name'] ?? $contact['office_name'] ?? 'Unit';
-                                    $head_units[] = $unit_name . ' (' . $contact['unit_type'] . ')';
-                                }
-                                echo htmlspecialchars(implode(', ', array_slice($head_units, 0, 3)));
-                                if (count($head_units) > 3) { echo ' +' . (count($head_units) - 3) . ' more'; } ?></div></div>
-                                <?php endif; ?>
-                                <?php if ($user_hierarchy['division']): ?><div class="hierarchy-row"><div class="hierarchy-label">Division:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['division']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['department']): ?><div class="hierarchy-row"><div class="hierarchy-label">Department:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['department']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['unit']): ?><div class="hierarchy-row"><div class="hierarchy-label">Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['unit']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['office']): ?><div class="hierarchy-row"><div class="hierarchy-label">Office:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['office']); ?></div></div><?php endif; ?>
-                                <?php if ($user_hierarchy['head_info'] && isset($user_hierarchy['head_info']['head_name']) && !$user_hierarchy['is_head']): ?>
-                                <div class="hierarchy-divider"></div>
-                                <div class="hierarchy-row"><div class="hierarchy-label">Head:</div><div class="hierarchy-value"><?php echo htmlspecialchars($user_hierarchy['head_info']['head_name']); ?></div></div>
-                                <?php endif; ?>
+                    <?php if(!empty($archived_chats)): ?>
+                        <?php foreach($archived_chats as $chat): 
+                            $other_user_id = getArrayValue($chat, 'user_id');
+                            $user_hierarchy = getUserHierarchyInfo($conn, $other_user_id);
+                        ?>
+                        <a href="?view=archived&chat_id=<?php echo getArrayValue($chat, 'chat_id'); ?>" class="chat-item <?php echo $selected_chat_id == getArrayValue($chat, 'chat_id') ? 'active' : ''; ?>">
+                            <div class="chat-avatar" style="background-color: #718096;"><?php echo strtoupper(substr(getArrayValue($chat, 'full_name', ''), 0, 1)); ?></div>
+                            <div class="chat-info">
+                                <div class="chat-name"><?php echo htmlspecialchars(getArrayValue($chat, 'full_name', 'Unknown User')); ?> <span class="archive-badge">Archived</span></div>
+                                <div class="chat-preview"><?php echo htmlspecialchars(substr(getArrayValue($chat, 'last_message', 'No messages'), 0, 30)); ?></div>
                             </div>
-                        </div>
-                    </a>
-                    <?php endforeach; ?>
+                            <div class="chat-time"><?php echo safeDateFormat(getArrayValue($chat, 'archived_at'), 'M d'); ?></div>
+                            
+                            <!-- ARCHIVED CHAT ITEM TOOLTIP -->
+                            <div class="hierarchy-tooltip">
+                                <h4><?php echo htmlspecialchars($user_hierarchy['full_name'] ?? 'Unknown User'); ?></h4>
+                                <div class="hierarchy-info">
+                                    <div class="hierarchy-row">
+                                        <div class="hierarchy-label">Email:</div>
+                                        <div class="hierarchy-value">
+                                            <?php echo htmlspecialchars(!empty($user_hierarchy['email']) ? $user_hierarchy['email'] : 'N/A'); ?>
+                                        </div>
+                                    </div>
+                                    <div class="hierarchy-row">
+                                        <div class="hierarchy-label">Role:</div>
+                                        <div class="hierarchy-value">
+                                            <?php echo htmlspecialchars($user_hierarchy['role_name'] ?? 'N/A'); ?>
+                                            <?php if ($user_hierarchy['is_head'] ?? false): ?>
+                                                <span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <?php if (!empty($user_hierarchy['current_unit'] ?? '')): ?>
+                                    <div class="hierarchy-row">
+                                        <div class="hierarchy-label">Current Unit:</div>
+                                        <div class="hierarchy-value">
+                                            <?php echo htmlspecialchars($user_hierarchy['current_unit']); ?>
+                                            <?php if (!empty($user_hierarchy['unit_type'] ?? '')): ?>
+                                                <span style="color: #a0aec0; font-size: 10px;">(<?php echo htmlspecialchars($user_hierarchy['unit_type']); ?>)</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </a>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <div style="color: #a0aec0; padding: 10px; text-align: center;">No archived chats with users</div>
+                    <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
@@ -591,8 +753,12 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                 </div>
             <?php endif; ?>
             
-            <?php if($error): ?><div class="error-message"><?php echo $error; ?></div><?php endif; ?>
-            <?php if($success): ?><div class="success-message"><?php echo $success; ?></div><?php endif; ?>
+            <?php if($error): ?>
+                <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
+            <?php endif; ?>
+            <?php if($success): ?>
+                <div class="success-message"><?php echo htmlspecialchars($success); ?></div>
+            <?php endif; ?>
             
             <?php if($selected_chat): ?>
                 <div class="chat-header <?php echo $view_archived ? 'archived-chat' : ''; ?>" style="<?php echo $view_archived ? 'background: linear-gradient(135deg, #718096 0%, #4a5568 100%);' : ''; ?>">
@@ -611,34 +777,37 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                         $is_sent = ($msg['sender_id'] == $user_id);
                         $sender_hierarchy = getUserHierarchyInfo($conn, $msg['sender_id']);
                     ?>
-                    <div class="message <?php echo $is_sent ? 'sent' : 'received'; ?>">
+                    <div class="message <?php echo $is_sent ? 'sent' : 'received'; ?>" data-message-id="<?php echo $msg['message_id']; ?>">
                         <div class="message-sender"><?php echo htmlspecialchars($msg['full_name']); ?>
+                            <!-- MESSAGE SENDER TOOLTIP -->
                             <div class="hierarchy-tooltip">
-                                <h4><?php echo htmlspecialchars($sender_hierarchy['full_name']); ?></h4>
+                                <h4><?php echo htmlspecialchars($sender_hierarchy['full_name'] ?? 'Unknown User'); ?></h4>
                                 <div class="hierarchy-info">
-                                    <div class="hierarchy-row"><div class="hierarchy-label">Email:</div><div class="hierarchy-value"><?php echo htmlspecialchars($sender_hierarchy['email'] ?? 'N/A'); ?></div></div>
-                                    <div class="hierarchy-row"><div class="hierarchy-label">Role:</div><div class="hierarchy-value"><?php echo htmlspecialchars($sender_hierarchy['role_name'] ?? 'N/A'); ?><?php if ($sender_hierarchy['is_head']): ?><span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span><?php endif; ?></div></div>
-                                    <?php if ($sender_hierarchy['current_unit']): ?>
-                                    <div class="hierarchy-row"><div class="hierarchy-label">Current Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($sender_hierarchy['current_unit']); ?><?php if ($sender_hierarchy['unit_type']): ?><span style="color: #a0aec0; font-size: 10px;">(<?php echo $sender_hierarchy['unit_type']; ?>)</span><?php endif; ?></div></div>
-                                    <?php endif; ?>
-                                    <?php if ($sender_hierarchy['is_head'] && !empty($sender_hierarchy['heads_contacts'])): ?>
-                                    <div class="hierarchy-divider"></div>
-                                    <div class="hierarchy-row"><div class="hierarchy-label">Heads:</div><div class="hierarchy-value"><?php 
-                                    $head_units = [];
-                                    foreach($sender_hierarchy['heads_contacts'] as $contact) {
-                                        $unit_name = $contact['unit_name'] ?? $contact['division_name'] ?? $contact['department_name'] ?? $contact['office_name'] ?? 'Unit';
-                                        $head_units[] = $unit_name . ' (' . $contact['unit_type'] . ')';
-                                    }
-                                    echo htmlspecialchars(implode(', ', array_slice($head_units, 0, 3)));
-                                    if (count($head_units) > 3) { echo ' +' . (count($head_units) - 3) . ' more'; } ?></div></div>
-                                    <?php endif; ?>
-                                    <?php if ($sender_hierarchy['division']): ?><div class="hierarchy-row"><div class="hierarchy-label">Division:</div><div class="hierarchy-value"><?php echo htmlspecialchars($sender_hierarchy['division']); ?></div></div><?php endif; ?>
-                                    <?php if ($sender_hierarchy['department']): ?><div class="hierarchy-row"><div class="hierarchy-label">Department:</div><div class="hierarchy-value"><?php echo htmlspecialchars($sender_hierarchy['department']); ?></div></div><?php endif; ?>
-                                    <?php if ($sender_hierarchy['unit']): ?><div class="hierarchy-row"><div class="hierarchy-label">Unit:</div><div class="hierarchy-value"><?php echo htmlspecialchars($sender_hierarchy['unit']); ?></div></div><?php endif; ?>
-                                    <?php if ($sender_hierarchy['office']): ?><div class="hierarchy-row"><div class="hierarchy-label">Office:</div><div class="hierarchy-value"><?php echo htmlspecialchars($sender_hierarchy['office']); ?></div></div><?php endif; ?>
-                                    <?php if ($sender_hierarchy['head_info'] && isset($sender_hierarchy['head_info']['head_name']) && !$sender_hierarchy['is_head']): ?>
-                                    <div class="hierarchy-divider"></div>
-                                    <div class="hierarchy-row"><div class="hierarchy-label">Head:</div><div class="hierarchy-value"><?php echo htmlspecialchars($sender_hierarchy['head_info']['head_name']); ?></div></div>
+                                    <div class="hierarchy-row">
+                                        <div class="hierarchy-label">Email:</div>
+                                        <div class="hierarchy-value">
+                                            <?php echo htmlspecialchars(!empty($sender_hierarchy['email']) ? $sender_hierarchy['email'] : 'N/A'); ?>
+                                        </div>
+                                    </div>
+                                    <div class="hierarchy-row">
+                                        <div class="hierarchy-label">Role:</div>
+                                        <div class="hierarchy-value">
+                                            <?php echo htmlspecialchars($sender_hierarchy['role_name'] ?? 'N/A'); ?>
+                                            <?php if ($sender_hierarchy['is_head'] ?? false): ?>
+                                                <span style="color: #38a169; font-weight: bold; margin-left: 5px;">(Head)</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <?php if (!empty($sender_hierarchy['current_unit'] ?? '')): ?>
+                                    <div class="hierarchy-row">
+                                        <div class="hierarchy-label">Current Unit:</div>
+                                        <div class="hierarchy-value">
+                                            <?php echo htmlspecialchars($sender_hierarchy['current_unit']); ?>
+                                            <?php if (!empty($sender_hierarchy['unit_type'] ?? '')): ?>
+                                                <span style="color: #a0aec0; font-size: 10px;">(<?php echo htmlspecialchars($sender_hierarchy['unit_type']); ?>)</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -657,7 +826,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                 
                 <?php if (!$view_archived): ?>
                     <div class="chat-input-area">
-                        <form method="POST" class="chat-form">
+                        <form method="POST" class="chat-form" id="chatForm">
                             <input type="hidden" name="chat_id" value="<?php echo $selected_chat_id; ?>">
                             <textarea name="message" class="chat-input" placeholder="Type your message here..." required></textarea>
                             <button type="submit" name="send_message" class="send-btn">Send</button>
@@ -671,7 +840,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                     </div>
                 <?php else: ?>
                     <div class="chat-input-area" style="background-color: #f1f5f9; border-top: 1px solid #cbd5e0;">
-                        <div style="text-align: center; padding: 15px; color: #64748b; font-style: italic;"><i class="fas fa-lock"></i> This chat is archived and cannot be modified.</div>
+                        <div style="text-align: center; padding: 15px; color: #64748b; font-style: italic;">🔒 This chat is archived and cannot be modified.</div>
                     </div>
                 <?php endif; ?>
             <?php elseif ($view_archived && empty($selected_chat_id)): ?>
@@ -683,7 +852,7 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                                 $other_user_id = $chat['user_id'];
                                 $user_hierarchy = getUserHierarchyInfo($conn, $other_user_id);
                                 
-                                // Get message count for archived chat - SQL Server version
+                                // Get message count for archived chat
                                 $msg_count_sql = "SELECT COUNT(*) as msg_count FROM admin_messages_archive WHERE chat_id = ?";
                                 $msg_count_params = array(getArrayValue($chat, 'chat_id'));
                                 $msg_count_stmt = sqlsrv_query($conn, $msg_count_sql, $msg_count_params);
@@ -700,21 +869,24 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
                                     <td style="color: #718096; font-size: 13px;"><?php echo htmlspecialchars(substr($chat['last_message'] ?? 'No messages', 0, 50)); ?></td>
                                     <td><span style="background-color: #e2e8f0; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 12px;"><?php echo $msg_count; ?> messages</span></td>
                                     <td style="color: #718096; font-size: 13px;"><?php echo safeDateFormat(getArrayValue($chat, 'archived_at'), 'M d, Y H:i'); ?></td>
-                                    <td><a href="adminpanel.php?view=archived&chat_id=<?php echo $chat['chat_id']; ?>" class="view-btn">View</a></td>
+                                    <td><a href="?view=archived&chat_id=<?php echo $chat['chat_id']; ?>" class="view-btn">View</a></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
                 <?php else: ?>
-                    <div class="no-archived-message">No archived chats found. Archived chats will appear here after being inactive for 5+ minutes.</div>
+                    <div class="no-archived-message">No archived chats with users found.</div>
                 <?php endif; ?>
             <?php else: ?>
                 <div class="no-chat-selected">
                     <div>
                         <h3>Welcome to Admin Chat</h3>
-                        <p>Select a user or admin to start chatting</p>
-                        <p>You can chat with:</p>
-                        <ul style="text-align: left; margin-top: 10px;"><li>Other admins</li><li>Online users</li><li>Or select from existing chats</li></ul>
+                        <p>Select a user from the online users list to start chatting</p>
+                        <p>You can only chat with regular users, not other operators.</p>
+                        <ul style="text-align: left; margin-top: 10px;">
+                            <li>Online users</li>
+                            <li>Or select from existing chats</li>
+                        </ul>
                         <div style="margin-top: 20px; padding: 15px; background: #f7fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
                             <h4>Archive System</h4>
                             <p style="font-size: 14px; color: #4a5568;">• Chats are auto-archived after 60 minutes of inactivity<br>• Archived chats are cleaned up after 7 days<br>• You can manually archive chats using the "Archive" button<br>• View archived chats using the toggle above</p>
@@ -726,116 +898,358 @@ ul.nav li a:hover { background-color: rgba(255,255,255,0.2); }
     </div>
 </div>
 
+<!-- ============ CHAT CONFIGURATION ============ -->
+<script id="chat-config" type="application/json">
+<?php
+$config = [
+    'chatId' => $selected_chat_id ?? 0,
+    'userId' => $user_id,
+    'isAdmin' => $is_admin,
+    'viewArchived' => $view_archived
+];
+echo json_encode($config, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+?>
+</script>
+
+<!-- ============ MAIN JAVASCRIPT ============ -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const chatMessages = document.getElementById('chat-messages');
-    if(chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+    'use strict';
+    console.log('AdminPanel Loaded');
+
+    // ----- LOAD CONFIG FROM JSON -----
+    let config;
+    try {
+        const configElement = document.getElementById('chat-config');
+        if (!configElement) {
+            console.error('Chat config element not found');
+            return;
+        }
+        config = JSON.parse(configElement.textContent);
+        console.log('Config loaded:', config);
+    } catch (e) {
+        console.error('Failed to load chat config:', e);
+        return;
+    }
+
+    const chatId = config.chatId;
+    const userId = config.userId;
+    const viewArchived = config.viewArchived;
+    const POLL_DELAY = 3000;
+
+    // ----- STATE -----
+    let lastMessageId = 0;
+    let pollInterval = null;
+    let isSending = false;
+
+    // ----- INITIALIZATION -----
+    function initialize() {
+        // Get the last message ID from existing messages
+        const messages = document.querySelectorAll('.message');
+        if (messages.length > 0) {
+            const lastMsg = messages[messages.length - 1];
+            const msgId = lastMsg.getAttribute('data-message-id');
+            if (msgId) {
+                lastMessageId = parseInt(msgId, 10);
+            }
+        }
+        console.log('Initial lastMessageId:', lastMessageId);
+        
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        if (chatId && chatId > 0 && !viewArchived) {
+            startPolling();
+        }
+    }
+
+    // ----- POLLING -----
+    function startPolling() {
+        if (pollInterval) clearInterval(pollInterval);
+        fetchNewMessages();
+        pollInterval = setInterval(fetchNewMessages, POLL_DELAY);
+        console.log('✅ Polling started');
+    }
     
-    const chatForm = document.querySelector('.chat-form');
-    if(chatForm) {
+    function stopPolling() {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+            console.log('⏸️ Polling stopped');
+        }
+    }
+    
+    function fetchNewMessages() {
+        if (!chatId || chatId === 0 || viewArchived) return;
+        
+        fetch(`get_admin_messages.php?chat_id=${chatId}&last_message_id=${lastMessageId}`)
+            .then(r => {
+                if (!r.ok) throw new Error('Network response not ok');
+                return r.json();
+            })
+            .then(data => {
+                if (data.success && data.messages && data.messages.length > 0) {
+                    appendMessages(data.messages);
+                    lastMessageId = data.last_message_id;
+                }
+            })
+            .catch(err => console.error('Error fetching messages:', err));
+    }
+
+    // ----- APPEND MESSAGES -----
+    function appendMessages(messages) {
+        const chatMessages = document.getElementById('chat-messages');
+        if (!chatMessages) return;
+        
+        const wasAtBottom = isScrolledToBottom();
+        let added = false;
+        
+        messages.forEach(msg => {
+            // Check if message already exists
+            if (document.querySelector(`.message[data-message-id="${msg.message_id}"]`)) {
+                return;
+            }
+            
+            const div = document.createElement('div');
+            div.className = `message ${msg.is_sent ? 'sent' : 'received'}`;
+            div.setAttribute('data-message-id', msg.message_id);
+            
+            const messageContent = escapeHtml(msg.message).replace(/\n/g, '<br>');
+            const timeString = formatTime(msg.created_at);
+            
+            div.innerHTML = `
+                <div class="message-sender">${escapeHtml(msg.full_name)}</div>
+                <div class="message-bubble">
+                    ${messageContent}
+                    <div style="font-size:11px; opacity:0.8; margin-top:5px;">${timeString}</div>
+                </div>
+            `;
+            
+            chatMessages.appendChild(div);
+            added = true;
+        });
+        
+        if (added && wasAtBottom) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+
+    // ----- SEND MESSAGE (AJAX) -----
+    function sendMessage(messageText) {
+        if (isSending || !messageText.trim() || !chatId || chatId === 0) {
+            return false;
+        }
+        
+        isSending = true;
+        const sendButton = document.querySelector('.send-btn');
+        const originalText = sendButton ? sendButton.textContent : 'Send';
+        const textarea = document.querySelector('.chat-input');
+        const originalMessage = messageText;
+        
+        if (sendButton) { 
+            sendButton.disabled = true; 
+            sendButton.textContent = 'Sending...'; 
+        }
+        if (textarea) { 
+            textarea.value = ''; 
+            textarea.style.height = 'auto'; 
+        }
+
+        const formData = new FormData();
+        formData.append('chat_id', chatId);
+        formData.append('message', messageText);
+
+        return fetch('send_admin_messages.php', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(r => {
+            if (!r.ok) {
+                throw new Error('Network response was not ok: ' + r.status);
+            }
+            return r.json();
+        })
+        .then(data => {
+            if (data.success && data.message) {
+                appendMessages([data.message]);
+                lastMessageId = data.message.message_id;
+                console.log('✅ Message sent successfully');
+                return true;
+            } else {
+                console.error('Send failed:', data.error);
+                if (textarea) textarea.value = originalMessage;
+                alert('Failed to send message: ' + (data.error || 'Unknown error'));
+                return false;
+            }
+        })
+        .catch(err => {
+            console.error('Send error:', err);
+            if (textarea) textarea.value = originalMessage;
+            alert('Error sending message. Please check your connection.');
+            return false;
+        })
+        .finally(() => {
+            isSending = false;
+            if (sendButton) { 
+                sendButton.disabled = false; 
+                sendButton.textContent = originalText; 
+            }
+            if (textarea) textarea.focus();
+        });
+    }
+
+    // ----- UTILITIES -----
+    function getLastMessageId() {
+        const msgs = document.querySelectorAll('.message');
+        if (!msgs.length) return 0;
+        const last = msgs[msgs.length - 1];
+        const id = last.getAttribute('data-message-id');
+        return id ? parseInt(id, 10) : 0;
+    }
+    
+    function isScrolledToBottom() {
+        const el = document.getElementById('chat-messages');
+        if (!el) return false;
+        const threshold = 50;
+        return (el.scrollHeight - el.scrollTop - el.clientHeight) < threshold;
+    }
+    
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function formatTime(datetime) {
+        try {
+            const d = new Date(datetime);
+            return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+            return datetime;
+        }
+    }
+
+    // ----- EVENT LISTENERS -----
+    function setupEventListeners() {
+        const chatForm = document.getElementById('chatForm');
+        if (!chatForm || viewArchived) return;
+        
         const textarea = chatForm.querySelector('textarea');
         const sendButton = chatForm.querySelector('button[type="submit"]');
         
-        if(textarea && sendButton) {
-            textarea.addEventListener('keydown', function(e) {
-                if ((e.key === 'Enter' || e.which === 13 || e.keyCode === 13) && !e.shiftKey) {
-                    e.preventDefault();
-                    if (this.value.trim() !== '') {
-                        const originalBg = sendButton.style.backgroundColor;
-                        this.style.borderColor = '#38a169';
-                        sendButton.style.backgroundColor = '#38a169';
-                        setTimeout(() => sendButton.click(), 10);
-                        setTimeout(() => {
-                            this.style.borderColor = '';
-                            sendButton.style.backgroundColor = originalBg;
-                        }, 200);
-                    }
-                }
-            });
-            setTimeout(() => textarea.focus(), 300);
-        }
-    }
-    
-    const notificationBtn = document.getElementById('adminNotificationBtn');
-    const notificationDropdown = document.getElementById('notificationDropdown');
-    
-    if(notificationBtn && notificationDropdown) {
-        notificationBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            if(notificationDropdown.style.opacity === '1') {
-                notificationDropdown.style.opacity = '0';
-                notificationDropdown.style.visibility = 'hidden';
-                notificationDropdown.style.transform = 'translateY(-10px)';
-            } else {
-                notificationDropdown.style.opacity = '1';
-                notificationDropdown.style.visibility = 'visible';
-                notificationDropdown.style.transform = 'translateY(0)';
+        if (!textarea || !sendButton) return;
+        
+        chatForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (textarea.value.trim()) {
+                sendMessage(textarea.value.trim());
             }
         });
         
-        document.addEventListener('click', function(e) {
-            if(notificationBtn && notificationDropdown) {
-                if(!notificationBtn.contains(e.target) && !notificationDropdown.contains(e.target)) {
-                    notificationDropdown.style.opacity = '0';
-                    notificationDropdown.style.visibility = 'hidden';
-                    notificationDropdown.style.transform = 'translateY(-10px)';
+        textarea.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (this.value.trim()) {
+                    sendMessage(this.value.trim());
                 }
             }
         });
+        
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+        
+        setTimeout(() => textarea.focus(), 100);
     }
-    
-    <?php if (!$view_archived && $selected_chat_id): ?>
-    setInterval(() => { location.reload(); }, 60000);
-    <?php endif; ?>
-    
-    function checkAdminNotifications() {
-        fetch('check_admin_notifications.php')
-            .then(response => response.json())
-            .then(data => {
-                const badge = document.querySelector('.notification-bell-badge');
-                const headerBadge = document.querySelector('.nav-notification-badge');
-                const headerCount = document.querySelector('.notification-header h4');
+
+    // ----- NOTIFICATION DROPDOWN -----
+    function setupNotifications() {
+        const btn = document.getElementById('adminNotificationBtn');
+        const dd = document.getElementById('notificationDropdown');
+        
+        if (btn && dd) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                e.preventDefault();
                 
-                if(data.count > 0) {
-                    if(badge) {
-                        badge.textContent = data.count;
-                        badge.style.display = 'inline-block';
-                    }
-                    if(headerBadge) {
-                        headerBadge.textContent = data.count;
-                        headerBadge.style.display = 'inline-block';
-                    }
-                    if(headerCount) {
-                        headerCount.textContent = `📨 New Chat Requests (${data.count})`;
-                    }
-                    
-                    if(data.count > parseInt(badge?.textContent || 0)) {
-                        showNotificationToast(data.latest?.user_name || 'New chat request');
-                    }
-                } else {
-                    if(badge) badge.style.display = 'none';
-                    if(headerBadge) headerBadge.style.display = 'none';
-                    if(headerCount) headerCount.textContent = '📨 New Chat Requests (0)';
+                const isVisible = dd.style.visibility === 'visible';
+                dd.style.opacity = isVisible ? '0' : '1';
+                dd.style.visibility = isVisible ? 'hidden' : 'visible';
+                dd.style.transform = isVisible ? 'translateY(-10px)' : 'translateY(0)';
+            });
+            
+            document.addEventListener('click', function(e) {
+                if (!btn.contains(e.target) && !dd.contains(e.target)) {
+                    dd.style.opacity = '0';
+                    dd.style.visibility = 'hidden';
+                    dd.style.transform = 'translateY(-10px)';
                 }
-            })
-            .catch(error => console.error('Error checking notifications:', error));
-    }
-    
-    function showNotificationToast(userName) {
-        if(Notification.permission === "granted") {
-            new Notification("New Chat Request", {
-                body: `${userName} wants to chat with you`,
-                icon: "hospitalLogo.png"
             });
         }
     }
-    
-    if (Notification.permission === "default") {
-        Notification.requestPermission();
-    }
-    
-    setInterval(checkAdminNotifications, 10000);
+
+    // ----- VISIBILITY API -----
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            stopPolling();
+        } else if (chatId && chatId > 0 && !viewArchived && !pollInterval) {
+            startPolling();
+        }
+    });
+
+    // ----- CLEANUP -----
+    window.addEventListener('beforeunload', function() {
+        stopPolling();
+    });
+
+    // ----- START -----
+    initialize();
+    setupEventListeners();
+    setupNotifications();
 });
 </script>
+
+<!-- ============ ADMIN NOTIFICATION CHECKER ============ -->
+<?php if (isset($is_admin) && $is_admin): ?>
+<script>
+(function() {
+    function checkNotifications() {
+        fetch('check_admin_notifications.php')
+            .then(r => r.json())
+            .then(data => {
+                const bellBadge = document.querySelector('.notification-bell-badge');
+                const navBadge = document.querySelector('.nav-notification-badge');
+                const header = document.querySelector('.notification-header h4');
+                
+                if (data.count > 0) {
+                    if (bellBadge) { 
+                        bellBadge.textContent = data.count; 
+                        bellBadge.style.display = 'inline-block'; 
+                    }
+                    if (navBadge) { 
+                        navBadge.textContent = data.count; 
+                        navBadge.style.display = 'inline-block'; 
+                    }
+                    if (header) header.textContent = `📨 New Chat Requests (${data.count})`;
+                } else {
+                    if (bellBadge) bellBadge.style.display = 'none';
+                    if (navBadge) navBadge.style.display = 'none';
+                    if (header) header.textContent = '📨 New Chat Requests (0)';
+                }
+            })
+            .catch(console.error);
+    }
+    
+    setInterval(checkNotifications, 10000);
+})();
+</script>
+<?php endif; ?>
+
+<?php ob_end_flush(); ?>
 </body>
 </html>

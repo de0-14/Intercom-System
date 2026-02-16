@@ -524,9 +524,11 @@ if (isAdmin()) {
 }
 
 // Get notification data
+$onlineAdminCount = function_exists('getOnlineAdmins') ? getOnlineAdmins($conn) : 0;
 $unread_count = 0;
 $admin_notifications_count = 0;
 $admin_chat_requests = [];
+$user_chats = [];
 
 if (function_exists('getUnreadAdminMessageCount')) {
     $unread_count = getUnreadAdminMessageCount($conn, $user_id, $is_admin);
@@ -538,6 +540,10 @@ if($is_admin && $user_id) {
     }
     if (function_exists('getAdminChatRequests')) {
         $admin_chat_requests = getAdminChatRequests($conn, $user_id);
+    }
+} else {
+    if (function_exists('getUserChatsWithAllAdmins')) {
+        $user_chats = getUserChatsWithAllAdmins($conn, $user_id);
     }
 }
 
@@ -560,78 +566,539 @@ if($user_id) {
     <title>My Profile - DRMC Intercom</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        /* Your existing CSS remains exactly the same */
+        /* EXACT SAME STYLES FROM HOMEPAGE.PHP */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
         }
 
         body {
-            background-color: #edf4fc;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+            background-color: #edf4fc;
         }
 
         .header {
-            background-color: #07417f;
-            color: white;
-            padding: 15px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             position: fixed;
             top: 0;
             left: 0;
-            right: 0;
+            width: 100%;
+            background-color: #07417f;
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border-bottom: 3px solid #2b6cb0;
         }
 
-        .logo {
+        .header .logo {
             display: flex;
             align-items: center;
             gap: 15px;
         }
 
-        .logo img {
-            width: 45px;
-            height: 45px;
+        .header .logo img {
+            width: 55px;
+            height: 55px;
             object-fit: contain;
         }
 
-        .logo span {
-            font-size: 1.3rem;
-            font-weight: 600;
+        .header .logo span {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
         }
 
-        .nav {
+        ul.nav {
             display: flex;
             list-style: none;
-            gap: 10px;
+            gap: 8px;
         }
 
-        .nav li a {
+        ul.nav li a {
+            display: block;
             color: white;
             text-decoration: none;
-            padding: 8px 15px;
-            border-radius: 5px;
-            font-weight: 500;
-            transition: background-color 0.3s;
+            padding: 10px 18px;
+            font-weight: 600;
+            border-radius: 6px;
+            transition: all 0.2s;
         }
 
-        .nav li a:hover {
+        ul.nav li a:hover {
             background-color: rgba(255,255,255,0.2);
         }
 
+        ul.nav li a.active {
+            background-color: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+        ul.nav li a.active:hover {
+            background-color: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
         .content {
-            margin-top: 80px;
-            padding: 30px;
+            flex: 1;
+            margin-top: 100px;
+            padding: 20px;
+        }
+
+        .admin-notification-container {
+            position: relative;
+            display: inline-block;
+            margin-left: 10px;
+        }
+
+        .admin-notification-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #e53e3e, #c53030);
+            color: white;
+            border: 3px solid white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 20px;
+            box-shadow: 0 3px 10px rgba(229, 62, 62, 0.3);
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .admin-notification-btn:hover {
+            background: linear-gradient(135deg, #c53030, #9b2c2c);
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(229, 62, 62, 0.4);
+        }
+
+        .notification-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            width: 350px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+            margin-top: 15px;
+            padding: 0;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s;
+        }
+
+        .admin-notification-container:hover .notification-dropdown {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .notification-header {
+            padding: 15px;
+            background: #2b6cb0;
+            color: white;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .notification-header h4 {
+            margin: 0;
+            color: white;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .notification-list {
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .notification-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border: 1px solid #e2e8f0;
+            transition: all 0.2s;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .notification-item:hover {
+            background-color: #f7fafc;
+            border-color: #cbd5e0;
+        }
+
+        .notification-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #2b6cb0;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 12px;
+            font-size: 16px;
+        }
+
+        .notification-info {
             flex: 1;
         }
 
+        .notification-name {
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 3px;
+            font-size: 14px;
+        }
+
+        .notification-meta {
+            font-size: 12px;
+            color: #718096;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .notification-time {
+            color: #a0aec0;
+        }
+
+        .message-count-badge {
+            background-color: #e53e3e;
+            color: white;
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            min-width: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .no-notifications {
+            text-align: center;
+            padding: 30px 20px;
+            color: #a0aec0;
+            font-style: italic;
+        }
+
+        .notification-footer {
+            padding: 12px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+        }
+
+        .view-all-btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #2b6cb0;
+            color: white;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+
+        .view-all-btn:hover {
+            background-color: #1f4f8b;
+        }
+
+        .notification-bell-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background-color: #e53e3e;
+            color: white;
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            min-width: 24px;
+            text-align: center;
+            font-weight: bold;
+            border: 2px solid white;
+            animation: pulse 1.5s infinite;
+        }
+
+        .nav-notification-badge {
+            background-color: #e53e3e;
+            color: white;
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            min-width: 18px;
+            text-align: center;
+            margin-left: 5px;
+            animation: pulse 2s infinite;
+            display: inline-block;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .admin-chat-container {
+            position: relative;
+            display: inline-block;
+            margin-left: 10px;
+        }
+
+        .admin-chat-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #38a169, #2f855a);
+            color: white;
+            border: 3px solid white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 20px;
+            box-shadow: 0 3px 10px rgba(56, 161, 105, 0.3);
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .admin-chat-btn:hover {
+            background: linear-gradient(135deg, #2f855a, #276749);
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(56, 161, 105, 0.4);
+        }
+
+        .admin-chat-btn::after {
+            content: '';
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 10px;
+            height: 10px;
+            background-color: #2b6cb0;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+
+        .admin-chat-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            width: 350px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+            margin-top: 15px;
+            padding: 15px;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s;
+        }
+
+        .admin-chat-container:hover .admin-chat-dropdown {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .admin-chat-dropdown h4 {
+            color: #2b6cb0;
+            margin: 0 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 16px;
+        }
+
+        .admin-chat-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+
+        .admin-chat-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            text-decoration: none;
+            color: #2d3748;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .admin-chat-item:hover {
+            background-color: #f7fafc;
+            border-color: #e2e8f0;
+        }
+
+        .admin-chat-avatar {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            background: #2b6cb0;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 14px;
+        }
+
+        .admin-chat-info {
+            flex: 1;
+        }
+
+        .admin-chat-name {
+            font-weight: 500;
+            display: block;
+            margin-bottom: 3px;
+            font-size: 14px;
+        }
+
+        .admin-chat-preview {
+            font-size: 12px;
+            color: #718096;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .admin-chat-time {
+            font-size: 11px;
+            color: #a0aec0;
+        }
+
+        .new-chat-btn {
+            display: block;
+            padding: 10px;
+            background-color: #2b6cb0;
+            color: white;
+            border-radius: 6px;
+            text-decoration: none;
+            text-align: center;
+            font-weight: 500;
+            margin-top: 10px;
+            transition: background-color 0.2s;
+        }
+
+        .new-chat-btn:hover {
+            background-color: #1f4f8b;
+        }
+
+        .chat-notification {
+            background-color: #fff5f5;
+            color: #742a2a;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 13px;
+            text-align: center;
+            border: 1px solid #fed7d7;
+            margin-top: 10px;
+        }
+
+        .chat-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background-color: #e53e3e;
+            color: white;
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            min-width: 20px;
+            text-align: center;
+            font-weight: bold;
+            border: 2px solid white;
+        }
+
+        .admin-select-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+
+        .admin-select-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-radius: 6px;
+            margin-bottom: 5px;
+            text-decoration: none;
+            color: #2d3748;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .admin-select-item:hover {
+            background-color: #f7fafc;
+            border-color: #e2e8f0;
+        }
+
+        .admin-select-name {
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .footer {
+            background-color: #07417f;
+            color: #fff;
+            text-align: center;
+            padding: 18px 10px;
+            font-size: 14px;
+            margin-top: auto;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                padding: 15px;
+                text-align: center;
+            }
+            .header .logo span {
+                font-size: 1.3rem;
+            }
+            ul.nav {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            .admin-chat-dropdown,
+            .notification-dropdown {
+                width: 280px;
+                right: -50px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .admin-chat-dropdown,
+            .notification-dropdown {
+                width: 250px;
+                right: -30px;
+            }
+        }
+
+        /* Profile page specific styles - preserved from original */
         .profile-container {
             max-width: 1400px;
             margin: 0 auto;
@@ -1026,159 +1493,6 @@ if($user_id) {
             gap: 20px;
         }
 
-        .footer {
-            background: #07417f;
-            color: white;
-            text-align: center;
-            padding: 15px;
-            margin-top: 30px;
-            font-size: 13px;
-        }
-
-        @media (max-width: 992px) {
-            .profile-container {
-                grid-template-columns: 1fr;
-            }
-            .profile-sidebar {
-                width: 100%;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .header {
-                flex-direction: column;
-                padding: 15px;
-            }
-            .nav {
-                margin-top: 15px;
-                flex-wrap: wrap;
-                justify-content: center;
-            }
-            .grid-2 {
-                grid-template-columns: 1fr;
-            }
-            .user-table {
-                display: block;
-                overflow-x: auto;
-            }
-        }
-
-        .admin-notification-container {
-            position: relative;
-            margin-left: 15px;
-        }
-
-        .admin-notification-btn {
-            width: 45px;
-            height: 45px;
-            border-radius: 50%;
-            background: #e53e3e;
-            color: white;
-            border: 2px solid white;
-            cursor: pointer;
-            font-size: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-        }
-
-        .notification-bell-badge {
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            background: #e53e3e;
-            color: white;
-            font-size: 11px;
-            padding: 2px 6px;
-            border-radius: 10px;
-            border: 2px solid white;
-        }
-
-        .notification-dropdown {
-            position: absolute;
-            top: 100%;
-            right: 0;
-            width: 350px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
-            margin-top: 10px;
-            display: none;
-            z-index: 1001;
-        }
-
-        .admin-notification-container:hover .notification-dropdown {
-            display: block;
-        }
-
-        .notification-header {
-            padding: 15px;
-            background: #2b6cb0;
-            color: white;
-            border-radius: 8px 8px 0 0;
-        }
-
-        .notification-list {
-            max-height: 350px;
-            overflow-y: auto;
-        }
-
-        .notification-item {
-            display: flex;
-            padding: 12px;
-            text-decoration: none;
-            color: inherit;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        .notification-item:hover {
-            background: #f7fafc;
-        }
-
-        .notification-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: #2b6cb0;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            margin-right: 12px;
-        }
-
-        .notification-info {
-            flex: 1;
-        }
-
-        .notification-name {
-            font-weight: 600;
-            color: #2d3748;
-            margin-bottom: 3px;
-        }
-
-        .notification-meta {
-            font-size: 12px;
-            color: #718096;
-        }
-
-        .no-notifications {
-            text-align: center;
-            padding: 30px;
-            color: #a0aec0;
-        }
-
-        .nav-notification-badge {
-            background: #e53e3e;
-            color: white;
-            font-size: 11px;
-            padding: 2px 6px;
-            border-radius: 10px;
-            margin-left: 5px;
-        }
-        
         .password-strength {
             margin-top: 5px;
             font-size: 12px;
@@ -1195,62 +1509,101 @@ if($user_id) {
         .strong {
             color: #38a169;
         }
+
+        @media (max-width: 992px) {
+            .profile-container {
+                grid-template-columns: 1fr;
+            }
+            .profile-sidebar {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+            .user-table {
+                display: block;
+                overflow-x: auto;
+            }
+        }
     </style>
 </head>
 <body>
-    <!-- HEADER -->
+    <!-- EXACT SAME HEADER FROM HOMEPAGE.PHP -->
     <div class="header">
         <div class="logo">
-            <img src="hospitalLogo.png" alt="DRMC Logo">
+            <img src="hospitalLogo.png" alt="Hospital Logo">
             <span>DAVAO REGIONAL MEDICAL CENTER</span>
         </div>
         <ul class="nav">
             <li><a href="homepage.php">Homepage</a></li>
-            <?php if (isAdmin()): ?>
-                <li><a href="createpage.php">Create page</a></li>
-                <li><a href="editpage.php">Edit page</a></li>
-                <li><a href="adminpanel.php">Admin Panel 
-                    <?php if ($admin_notifications_count > 0): ?>
-                        <span class="nav-notification-badge"><?php echo $admin_notifications_count; ?></span>
-                    <?php endif; ?>
-                </a></li>
+            <?php if (isLoggedIn()): ?>
+                <?php if (isAdmin()): ?>
+                    <li><a href="createpage.php">Create page</a></li>
+                    <li><a href="editpage.php">Edit page</a></li>
+                    <li>
+                        <a href="adminpanel.php" class="notification-indicator">
+                            Operator Panel 
+                            <?php if ($admin_notifications_count > 0): ?>
+                                <span class="nav-notification-badge"><?php echo $admin_notifications_count; ?></span>
+                            <?php endif; ?>
+                        </a>
+                    </li>
+                <?php else: ?>
+                    <li><a href="adminchat.php">Chat with an Operator <?php echo $unread_count > 0 ? "($unread_count)" : ""; ?></a></li>
+                <?php endif; ?>
+                <li><a href="profilepage.php" class="active">Profile</a></li>
+                <li><a href="logout.php">Logout (<?php echo htmlspecialchars($_SESSION['username'] ?? 'User'); ?>)</a></li>
             <?php else: ?>
-                <li><a href="adminchat.php">Chat with Admin <?php echo $unread_count > 0 ? "($unread_count)" : ""; ?></a></li>
+                <li><a href="login.php">Login</a></li>
             <?php endif; ?>
-            <li><a href="profilepage.php">Profile</a></li>
-            <li><a href="logout.php">Logout (<?php echo htmlspecialchars($_SESSION['username'] ?? 'User'); ?>)</a></li>
         </ul>
         
         <?php if($is_admin && $user_id): ?>
         <div class="admin-notification-container">
-            <button class="admin-notification-btn">
+            <button class="admin-notification-btn" id="adminNotificationBtn">
                 🔔
                 <?php if($admin_notifications_count > 0): ?>
                     <span class="notification-bell-badge"><?php echo $admin_notifications_count; ?></span>
                 <?php endif; ?>
             </button>
-            <div class="notification-dropdown">
+            <div class="notification-dropdown" id="notificationDropdown">
                 <div class="notification-header">
-                    <h4>New Chat Requests (<?php echo $admin_notifications_count; ?>)</h4>
+                    <h4>📨 New Chat Requests (<?php echo $admin_notifications_count; ?>)</h4>
                 </div>
                 <div class="notification-list">
                     <?php if(!empty($admin_chat_requests)): ?>
-                        <?php foreach($admin_chat_requests as $request): ?>
-                        <a href="adminpanel.php?chat_id=<?php echo $request['user_id']; ?>" class="notification-item">
+                        <?php foreach($admin_chat_requests as $request): 
+                            $chat_id = function_exists('getAdminChatWithUser') ? getAdminChatWithUser($conn, $user_id, $request['user_id']) : null;
+                            $chat_link = $chat_id ? "adminpanel.php?chat_id=$chat_id" : "adminpanel.php?start_chat=" . $request['user_id'];
+                        ?>
+                        <a href="<?php echo $chat_link; ?>" class="notification-item">
                             <div class="notification-avatar">
                                 <?php echo strtoupper(substr($request['full_name'], 0, 1)); ?>
                             </div>
                             <div class="notification-info">
                                 <div class="notification-name"><?php echo htmlspecialchars($request['full_name']); ?></div>
                                 <div class="notification-meta">
-                                    <?php echo $request['message_count'] ?? 1; ?> message(s)
+                                    <span class="notification-time"><?php echo function_exists('time_ago') ? time_ago($request['first_message_time']) : 'Just now'; ?></span>
+                                    <?php if(($request['message_count'] ?? 1) > 1): ?>
+                                        <span class="message-count-badge"><?php echo $request['message_count']; ?> messages</span>
+                                    <?php else: ?>
+                                        <span class="message-count-badge">New message</span>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </a>
                         <?php endforeach; ?>
                     <?php else: ?>
-                        <div class="no-notifications">No new chat requests</div>
+                        <div class="no-notifications">
+                            No new chat requests
+                        </div>
                     <?php endif; ?>
+                </div>
+                <div class="notification-footer">
+                    <a href="adminpanel.php" class="view-all-btn">View All Chats</a>
                 </div>
             </div>
         </div>
@@ -1301,13 +1654,7 @@ if($user_id) {
                     <div class="stat-row">
                         <span class="stat-label">Users Online:</span>
                         <span class="stat-value">
-                            <?php 
-                            if (function_exists('getOnlineAdmins')) {
-                                echo getOnlineAdmins($conn); 
-                            } else {
-                                echo "0";
-                            }
-                            ?>
+                            <?php echo $onlineAdminCount; ?>
                         </span>
                     </div>
                     <?php endif; ?>
@@ -1421,13 +1768,7 @@ if($user_id) {
                         </div>
                         <div class="admin-stat-card">
                             <div class="admin-stat-value">
-                                <?php 
-                                if (function_exists('getOnlineAdmins')) {
-                                    echo getOnlineAdmins($conn); 
-                                } else {
-                                    echo "0";
-                                }
-                                ?>
+                                <?php echo $onlineAdminCount; ?>
                             </div>
                             <div class="admin-stat-label">Online Now</div>
                         </div>
@@ -1484,10 +1825,10 @@ if($user_id) {
                                                 }
                                             }
                                         } else {
-                                            if ($user['division_name']) $orgs[] = "Div: " . $user['division_name'];
-                                            if ($user['department_name']) $orgs[] = "Dept: " . $user['department_name'];
-                                            if ($user['unit_name']) $orgs[] = "Unit: " . $user['unit_name'];
-                                            if ($user['office_name']) $orgs[] = "Office: " . $user['office_name'];
+                                            if (!empty($user['division_name'])) $orgs[] = "Div: " . $user['division_name'];
+                                            if (!empty($user['department_name'])) $orgs[] = "Dept: " . $user['department_name'];
+                                            if (!empty($user['unit_name'])) $orgs[] = "Unit: " . $user['unit_name'];
+                                            if (!empty($user['office_name'])) $orgs[] = "Office: " . $user['office_name'];
                                         }
                                         
                                         echo !empty($orgs) ? implode('<br>', array_slice($orgs, 0, 2)) : '<em>Not assigned</em>';
@@ -1512,6 +1853,11 @@ if($user_id) {
                 <?php endif; ?>
             </div>
         </div>
+    </div>
+
+    <div class="footer">
+        © 2026 Intercom Directory. All rights reserved.<br>
+        Developed by TNTS Programming Students JT.DP.RR
     </div>
 
     <!-- USER MODAL (Add/Edit) -->
@@ -1634,6 +1980,7 @@ if($user_id) {
         </div>
     </div>
     
+    <!-- PASSWORD RESET MODAL -->
     <div class="modal" id="passwordModal">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -1668,6 +2015,7 @@ if($user_id) {
         </div>
     </div>
     
+    <!-- DELETE CONFIRMATION MODAL -->
     <div class="modal" id="deleteModal">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -1687,12 +2035,58 @@ if($user_id) {
         </div>
     </div>
 
-    <div class="footer">
-        © 2026 Intercom Directory. All rights reserved.<br>
-        Developed by TNTS Programming Students JT.DP.RR
-    </div>
-
     <script>
+        // ============ NOTIFICATION DROPDOWN FUNCTIONALITY - MATCHING HOMEPAGE.PHP ============
+        document.addEventListener('DOMContentLoaded', function() {
+            const notificationBtn = document.getElementById('adminNotificationBtn');
+            const notificationContainer = document.querySelector('.admin-notification-container');
+            const notificationDropdown = document.getElementById('notificationDropdown');
+            
+            if(notificationBtn && notificationContainer && notificationDropdown) {
+                // Toggle dropdown on button click
+                notificationBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    notificationContainer.classList.toggle('active');
+                    
+                    // Toggle dropdown visibility
+                    if(notificationDropdown.style.opacity === '1') {
+                        notificationDropdown.style.opacity = '0';
+                        notificationDropdown.style.visibility = 'hidden';
+                        notificationDropdown.style.transform = 'translateY(-10px)';
+                    } else {
+                        notificationDropdown.style.opacity = '1';
+                        notificationDropdown.style.visibility = 'visible';
+                        notificationDropdown.style.transform = 'translateY(0)';
+                    }
+                });
+                
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(e) {
+                    if(notificationContainer && !notificationContainer.contains(e.target)) {
+                        notificationDropdown.style.opacity = '0';
+                        notificationDropdown.style.visibility = 'hidden';
+                        notificationDropdown.style.transform = 'translateY(-10px)';
+                    }
+                });
+                
+                // Prevent closing when clicking inside dropdown
+                notificationDropdown.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+                
+                // Add ESC key to close
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && notificationContainer) {
+                        notificationDropdown.style.opacity = '0';
+                        notificationDropdown.style.visibility = 'hidden';
+                        notificationDropdown.style.transform = 'translateY(-10px)';
+                    }
+                });
+            }
+        });
+
+        // ============ END NOTIFICATION DROPDOWN FUNCTIONALITY ============
+
         function togglePassword(inputId, button) {
             var input = document.getElementById(inputId);
             if (input.type === 'password') {
@@ -2342,6 +2736,44 @@ if($user_id) {
                 adminConfirm.addEventListener('keyup', checkAdminPasswordMatch);
             }
         });
+
+        // Auto-refresh notifications (matching homepage)
+        function checkAdminNotifications() {
+            fetch('check_admin_notifications.php')
+                .then(response => response.json())
+                .then(data => {
+                    const badge = document.querySelector('.notification-bell-badge');
+                    const headerBadge = document.querySelector('.nav-notification-badge');
+                    const headerCount = document.querySelector('.notification-header h4');
+                    
+                    if(data.count > 0) {
+                        if(badge) {
+                            badge.textContent = data.count;
+                            badge.style.display = 'inline-block';
+                        }
+                        if(headerBadge) {
+                            headerBadge.textContent = data.count;
+                            headerBadge.style.display = 'inline-block';
+                        }
+                        if(headerCount) {
+                            headerCount.textContent = `📨 New Chat Requests (${data.count})`;
+                        }
+                    } else {
+                        if(badge) badge.style.display = 'none';
+                        if(headerBadge) headerBadge.style.display = 'none';
+                        if(headerCount) headerCount.textContent = '📨 New Chat Requests (0)';
+                    }
+                })
+                .catch(error => console.error('Error checking notifications:', error));
+        }
+
+        // Request notification permission
+        if (Notification && Notification.permission === "default") {
+            Notification.requestPermission();
+        }
+
+        // Set interval to check notifications (every 10 seconds)
+        setInterval(checkAdminNotifications, 10000);
     </script>
 </body>
 </html>

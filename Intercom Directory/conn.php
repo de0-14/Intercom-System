@@ -363,6 +363,32 @@ function getUsersByRoleIds($conn, $role_ids) {
     return $users;
 }
 
+/**
+ * Safely format a date/time value from SQL Server
+ * Handles both DateTime objects and string dates
+ */
+function safeDateFormat($dateTime, $format = 'Y-m-d H:i:s') {
+    if ($dateTime === null) {
+        return 'N/A';
+    }
+    
+    if ($dateTime instanceof DateTime) {
+        return $dateTime->format($format);
+    }
+    
+    // If it's already a string, try to create DateTime from it
+    if (is_string($dateTime)) {
+        try {
+            $dt = new DateTime($dateTime);
+            return $dt->format($format);
+        } catch (Exception $e) {
+            return $dateTime; // Return original string if parsing fails
+        }
+    }
+    
+    return 'N/A';
+}
+
 function sendAdminMessage($conn, $chat_id, $sender_id, $message) {
     $sql = "INSERT INTO admin_messages (chat_id, sender_id, message, created_at) 
             VALUES (?, ?, ?, GETDATE())";
