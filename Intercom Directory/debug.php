@@ -1,194 +1,169 @@
 <?php
 require_once 'conn.php';
+require_once 'admin_archive_functions.php';
 
-echo "<h2>Debugging Division Issue</h2>";
+// Start session to get current user
+session_start();
 
-// 1. First, check what numbers we have
-echo "<h3>1. Numbers in Database:</h3>";
-$sql = "SELECT number_id, numbers, division_id, department_id, unit_id, office_id, status FROM numbers";
-$stmt = sqlsrv_query($conn, $sql);
+echo "<h1>Online Users Debug</h1>";
 
-echo "<table border='1' cellpadding='5'>";
-echo "<tr><th>ID</th><th>Number</th><th>Div ID</th><th>Dept ID</th><th>Unit ID</th><th>Office ID</th><th>Status</th></tr>";
-if($stmt) {
-    while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-        echo "<tr>";
-        echo "<td>{$row['number_id']}</td>";
-        echo "<td>{$row['numbers']}</td>";
-        echo "<td>" . ($row['division_id'] ?? 'NULL') . "</td>";
-        echo "<td>" . ($row['department_id'] ?? 'NULL') . "</td>";
-        echo "<td>" . ($row['unit_id'] ?? 'NULL') . "</td>";
-        echo "<td>" . ($row['office_id'] ?? 'NULL') . "</td>";
-        echo "<td>{$row['status']}</td>";
-        echo "</tr>";
+// Test 1: Check current user session
+echo "<h2>1. Current User Session</h2>";
+if (isset($_SESSION['user_id'])) {
+    echo "Current User ID: " . $_SESSION['user_id'] . "<br>";
+    
+    // Get current user details
+    $sql = "SELECT user_id, username, full_name, last_activity FROM users WHERE user_id = ?";
+    $stmt = sqlsrv_query($conn, $sql, array($_SESSION['user_id']));
+    if ($stmt && $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        echo "Current User: " . $row['full_name'] . " (" . $row['username'] . ")<br>";
+        echo "Last Activity: " . ($row['last_activity'] instanceof DateTime ? $row['last_activity']->format('Y-m-d H:i:s') : $row['last_activity']) . "<br>";
     }
     sqlsrv_free_stmt($stmt);
+} else {
+    echo "No user logged in<br>";
 }
-echo "</table>";
 
-// 2. Check divisions table
-echo "<h3>2. Divisions in Database:</h3>";
-$sql = "SELECT division_id, division_name, status FROM divisions ORDER BY division_id";
+echo "<hr>";
+
+// Test 2: Check all users in database
+echo "<h2>2. All Users in Database</h2>";
+$sql = "SELECT user_id, username, full_name, last_activity, role_id FROM users ORDER BY last_activity DESC";
 $stmt = sqlsrv_query($conn, $sql);
 
-echo "<table border='1' cellpadding='5'>";
-echo "<tr><th>ID</th><th>Name</th><th>Status</th></tr>";
-if($stmt) {
-    while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+if ($stmt === false) {
+    echo "SQL Error: " . print_r(sqlsrv_errors(), true);
+} else {
+    echo "<table border='1' cellpadding='5'>";
+    echo "<tr><th>ID</th><th>Username</th><th>Full Name</th><th>Last Activity</th><th>Status</th></tr>";
+    
+    $timeout = 300; // 5 minutes
+    $onlineTime = time() - $timeout;
+    $onlineDateTime = date('Y-m-d H:i:s', $onlineTime);
+    
+    while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        $lastActivity = $row['last_activity'] instanceof DateTime ? 
+                        $row['last_activity']->format('Y-m-d H:i:s') : 
+                        $row['last_activity'];
+        
+        // Check if online
+        $isOnline = ($lastActivity > $onlineDateTime) ? "✅ ONLINE" : "❌ OFFLINE";
+        
         echo "<tr>";
-        echo "<td>{$row['division_id']}</td>";
-        echo "<td>{$row['division_name']}</td>";
-        echo "<td>{$row['status']}</td>";
+        echo "<td>" . $row['user_id'] . "</td>";
+        echo "<td>" . htmlspecialchars($row['username']) . "</td>";
+        echo "<td>" . htmlspecialchars($row['full_name']) . "</td>";
+        echo "<td>" . $lastActivity . "</td>";
+        echo "<td>" . $isOnline . "</td>";
         echo "</tr>";
     }
+    echo "</table>";
     sqlsrv_free_stmt($stmt);
 }
-echo "</table>";
 
-// 3. Check specific division IDs mentioned in numbers (3, 4, 5)
-echo "<h3>3. Checking Specific Division IDs (3, 4, 5):</h3>";
-$sql = "SELECT division_id, division_name, status FROM divisions WHERE division_id IN (3, 4, 5)";
-$stmt = sqlsrv_query($conn, $sql);
+echo "<hr>";
 
-if($stmt) {
-    $found = [];
-    while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-        $found[] = $row['division_id'];
-        echo "<p>Found Division ID {$row['division_id']}: {$row['division_name']} (Status: {$row['status']})</p>";
+// Test 3: Check getOnlineUsers() function
+echo "<h2>3. getOnlineUsers() Function Output</h2>";
+$online_users = getOnlineUsers($conn);
+echo "Function returned: " . count($online_users) . " users<br>";
+
+if (!empty($online_users)) {
+    echo "<ul>";
+    foreach ($online_users as $user) {
+        echo "<li>" . htmlspecialchars($user['full_name']) . " (Last: " . 
+             ($user['last_activity'] instanceof DateTime ? $user['last_activity']->format('H:i:s') : $user['last_activity']) . ")</li>";
+    }
+    echo "</ul>";
+} else {
+    echo "No online users found by function<br>";
+}
+
+echo "<hr>";
+
+// Test 4: Try to update current user's activity
+echo "<h2>4. Update Current User Activity</h2>";
+if (isset($_SESSION['user_id'])) {
+    $update_sql = "UPDATE users SET last_activity = GETDATE() WHERE user_id = ?";
+    $update_stmt = sqlsrv_query($conn, $update_sql, array($_SESSION['user_id']));
+    
+    if ($update_stmt) {
+        echo "✅ User activity updated successfully<br>";
+        sqlsrv_free_stmt($update_stmt);
+    } else {
+        echo "❌ Failed to update user activity: " . print_r(sqlsrv_errors(), true) . "<br>";
     }
     
-    $missing = array_diff([3, 4, 5], $found);
-    if(!empty($missing)) {
-        echo "<p style='color: red;'>Missing Division IDs: " . implode(', ', $missing) . "</p>";
+    // Check updated time
+    $check_sql = "SELECT last_activity FROM users WHERE user_id = ?";
+    $check_stmt = sqlsrv_query($conn, $check_sql, array($_SESSION['user_id']));
+    if ($check_stmt && $row = sqlsrv_fetch_array($check_stmt, SQLSRV_FETCH_ASSOC)) {
+        $newTime = $row['last_activity'] instanceof DateTime ? 
+                   $row['last_activity']->format('Y-m-d H:i:s') : 
+                   $row['last_activity'];
+        echo "New last_activity: " . $newTime . "<br>";
     }
-    sqlsrv_free_stmt($stmt);
+    sqlsrv_free_stmt($check_stmt);
 }
 
-// 4. Test the JOIN query
-echo "<h3>4. Testing JOIN Query:</h3>";
-$sql = "SELECT n.number_id, n.division_id, d.division_name, d.status as div_status
-        FROM numbers n
-        LEFT JOIN divisions d ON n.division_id = d.division_id
-        WHERE n.division_id IS NOT NULL";
+echo "<hr>";
 
-$stmt = sqlsrv_query($conn, $sql);
+// Test 5: Check online threshold
+echo "<h2>5. Online Threshold Settings</h2>";
+$timeout = 300; // 5 minutes
+echo "Online threshold: " . $timeout . " seconds (5 minutes)<br>";
+$onlineTime = time() - $timeout;
+echo "Users active after: " . date('Y-m-d H:i:s', $onlineTime) . " are considered online<br>";
 
-echo "<table border='1' cellpadding='5'>";
-echo "<tr><th>Number ID</th><th>Division ID</th><th>Division Name</th><th>Div Status</th></tr>";
-if($stmt) {
-    while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-        echo "<tr>";
-        echo "<td>{$row['number_id']}</td>";
-        echo "<td>{$row['division_id']}</td>";
-        echo "<td>" . ($row['division_name'] ?? 'NULL/Not Found') . "</td>";
-        echo "<td>" . ($row['div_status'] ?? 'NULL/Not Found') . "</td>";
-        echo "</tr>";
+echo "<hr>";
+
+// Test 6: Look specifically for "Nursing Head"
+echo "<h2>6. Search for 'Nursing Head'</h2>";
+$search_sql = "SELECT user_id, username, full_name, last_activity FROM users WHERE full_name LIKE '%Nursing%' OR username LIKE '%Nursing%'";
+$search_stmt = sqlsrv_query($conn, $search_sql);
+
+if ($search_stmt === false) {
+    echo "Search error: " . print_r(sqlsrv_errors(), true);
+} else {
+    $found = false;
+    while ($row = sqlsrv_fetch_array($search_stmt, SQLSRV_FETCH_ASSOC)) {
+        $found = true;
+        $lastActivity = $row['last_activity'] instanceof DateTime ? 
+                        $row['last_activity']->format('Y-m-d H:i:s') : 
+                        $row['last_activity'];
+        echo "Found: " . htmlspecialchars($row['full_name']) . " (ID: " . $row['user_id'] . ")<br>";
+        echo "Last Activity: " . $lastActivity . "<br>";
+        
+        // Check if they should be online
+        $isOnline = ($lastActivity > date('Y-m-d H:i:s', time() - 300)) ? "✅ Should be ONLINE" : "❌ Should be OFFLINE";
+        echo "Status: " . $isOnline . "<br><br>";
     }
-    sqlsrv_free_stmt($stmt);
-}
-echo "</table>";
-
-// 5. Test the full getAllContactNumbers logic
-echo "<h3>5. Testing getAllContactNumbers Logic:</h3>";
-
-// Simulate the logic from getAllContactNumbers
-$sql = "SELECT 
-            n.number_id,
-            n.numbers as contact_number,
-            n.division_id,
-            d.division_name,
-            d.status as division_status,
-            CASE 
-                WHEN n.division_id IS NOT NULL THEN 'Division'
-                ELSE 'Unknown'
-            END as unit_type
-        FROM numbers n
-        LEFT JOIN divisions d ON n.division_id = d.division_id
-        WHERE n.division_id IS NOT NULL";
-
-$stmt = sqlsrv_query($conn, $sql);
-
-echo "<table border='1' cellpadding='5'>";
-echo "<tr><th>Number ID</th><th>Contact Number</th><th>Div ID</th><th>Division Name</th><th>Div Status</th><th>Unit Type</th></tr>";
-if($stmt) {
-    while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-        echo "<tr>";
-        echo "<td>{$row['number_id']}</td>";
-        echo "<td>{$row['contact_number']}</td>";
-        echo "<td>{$row['division_id']}</td>";
-        echo "<td>" . ($row['division_name'] ?? 'NULL') . "</td>";
-        echo "<td>" . ($row['division_status'] ?? 'NULL') . "</td>";
-        echo "<td>{$row['unit_type']}</td>";
-        echo "</tr>";
+    
+    if (!$found) {
+        echo "No user named 'Nursing Head' found in database<br>";
     }
-    sqlsrv_free_stmt($stmt);
-}
-echo "</table>";
-
-// 6. Check database structure
-echo "<h3>6. Database Structure Check:</h3>";
-echo "<h4>Numbers Table Structure:</h4>";
-$sql = "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE 
-        FROM INFORMATION_SCHEMA.COLUMNS 
-        WHERE TABLE_NAME = 'numbers' 
-        AND COLUMN_NAME LIKE '%division%' 
-        OR COLUMN_NAME LIKE '%department%' 
-        OR COLUMN_NAME LIKE '%unit%' 
-        OR COLUMN_NAME LIKE '%office%'";
-$stmt = sqlsrv_query($conn, $sql);
-
-if($stmt) {
-    echo "<table border='1' cellpadding='5'>";
-    echo "<tr><th>Column</th><th>Data Type</th><th>Nullable</th></tr>";
-    while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-        echo "<tr>";
-        echo "<td>{$row['COLUMN_NAME']}</td>";
-        echo "<td>{$row['DATA_TYPE']}</td>";
-        echo "<td>{$row['IS_NULLABLE']}</td>";
-        echo "</tr>";
-    }
-    sqlsrv_free_stmt($stmt);
-    echo "</table>";
+    sqlsrv_free_stmt($search_stmt);
 }
 
-// 7. Check if there are any data type mismatches
-echo "<h4>Data Type Issues:</h4>";
-$sql = "SELECT 
-            n.number_id,
-            n.division_id,
-            CASE 
-                WHEN ISNUMERIC(n.division_id) = 1 THEN 'Numeric'
-                ELSE 'Non-numeric'
-            END as div_id_type,
-            d.division_id as div_table_id
-        FROM numbers n
-        LEFT JOIN divisions d ON CAST(n.division_id AS VARCHAR) = CAST(d.division_id AS VARCHAR)
-        WHERE n.division_id IS NOT NULL";
+echo "<hr>";
 
-$stmt = sqlsrv_query($conn, $sql);
-if($stmt) {
-    echo "<table border='1' cellpadding='5'>";
-    echo "<tr><th>Number ID</th><th>Division ID (numbers)</th><th>Type</th><th>Division ID (divisions)</th></tr>";
-    while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-        echo "<tr>";
-        echo "<td>{$row['number_id']}</td>";
-        echo "<td>{$row['division_id']}</td>";
-        echo "<td>{$row['div_id_type']}</td>";
-        echo "<td>" . ($row['div_table_id'] ?? 'NULL') . "</td>";
-        echo "</tr>";
+// Test 7: Fix suggestion
+echo "<h2>7. Quick Fix Suggestion</h2>";
+echo "To fix immediately, run this SQL query to update all users' last_activity:<br>";
+echo "<code>UPDATE users SET last_activity = GETDATE() WHERE user_id IN (SELECT user_id FROM users)</code><br>";
+echo "<br>Or click here to run it: <a href='debug_online_users.php?fix=1'>Run Quick Fix</a>";
+
+if (isset($_GET['fix']) && $_GET['fix'] == 1 && isset($_SESSION['user_id'])) {
+    $fix_sql = "UPDATE users SET last_activity = GETDATE() WHERE user_id IN (SELECT user_id FROM users)";
+    $fix_stmt = sqlsrv_query($conn, $fix_sql);
+    
+    if ($fix_stmt) {
+        echo "<br><br>✅ All users updated! <a href='debug_online_users.php'>Refresh</a>";
+        sqlsrv_free_stmt($fix_stmt);
+    } else {
+        echo "<br><br>❌ Fix failed: " . print_r(sqlsrv_errors(), true);
     }
-    sqlsrv_free_stmt($stmt);
-    echo "</table>";
 }
-
-echo "<hr><h3>Summary:</h3>";
-echo "<p>Based on the debug output above:</p>";
-echo "<ol>";
-echo "<li>Check if division IDs in numbers table match IDs in divisions table</li>";
-echo "<li>Check if division records exist for IDs 3, 4, 5</li>";
-echo "<li>Check if there are data type mismatches (e.g., string vs integer)</li>";
-echo "<li>Check if the JOIN is working correctly</li>";
-echo "</ol>";
-
-echo "<p><a href='index.php'>← Back to Contact Directory</a></p>";
 ?>
+<br><br>
+<a href="adminpanel.php">Back to Admin Panel</a>

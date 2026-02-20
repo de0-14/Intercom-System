@@ -1,195 +1,128 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// test_conversation_12.php
+require_once 'conn.php';
 
 date_default_timezone_set('Asia/Manila');
-ini_set('date.timezone', 'Asia/Manila');
 
-echo "<h1>Archive System Debug</h1>";
-echo "<p>Current time: " . date('Y-m-d H:i:s') . "</p>";
-
-// Include all files
-require_once 'conn.php';
-require_once 'archive_functions.php';
-require_once 'admin_archive_functions.php';
-
-echo "<h2>1. File Inclusion Check</h2>";
-echo "<pre>";
-echo "conn.php included: " . (file_exists('conn.php') ? 'YES' : 'NO') . "\n";
-echo "archive_functions.php included: " . (file_exists('archive_functions.php') ? 'YES' : 'NO') . "\n";
-echo "admin_archive_functions.php included: " . (file_exists('admin_archive_functions.php') ? 'YES' : 'NO') . "\n";
-echo "</pre>";
-
-echo "<h2>2. Function Existence Check</h2>";
-echo "<pre>";
-echo "archiveAllInactiveChatsOnLoad: " . (function_exists('archiveAllInactiveChatsOnLoad') ? 'YES' : 'NO') . "\n";
-echo "autoArchiveInactiveAdminChats: " . (function_exists('autoArchiveInactiveAdminChats') ? 'YES' : 'NO') . "\n";
-echo "archiveConversationImmediately: " . (function_exists('archiveConversationImmediately') ? 'YES' : 'NO') . "\n";
-echo "removeOldArchivedAdminChats: " . (function_exists('removeOldArchivedAdminChats') ? 'YES' : 'NO') . "\n";
-echo "</pre>";
-
-echo "<h2>3. Check Database Connection</h2>";
+// Set MySQL timezone to match PHP
 if ($conn) {
-    echo "Database connection: <span style='color:green;'>SUCCESS</span><br>";
+    $conn->query("SET time_zone = '+08:00'");
     
-    // Check if tables exist
-    $tables = ['conversations', 'conversations_archive', 'messages', 'messages_archive', 'admin_chats', 'admin_chats_archive'];
-    foreach ($tables as $table) {
-        $check_sql = "SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?";
-        $check_params = array($table);
-        $check_stmt = sqlsrv_query($conn, $check_sql, $check_params);
+    // Debug: Check timezone sync (remove this after testing)
+    $php_time = date('Y-m-d H:i:s');
+    $mysql_time_result = $conn->query("SELECT NOW() as mysql_time");
+    if ($mysql_time_result) {
+        $mysql_time_row = $mysql_time_result->fetch_assoc();
+        $mysql_time = $mysql_time_row['mysql_time'];
+        error_log("Timezone Debug - PHP: $php_time, MySQL: $mysql_time");
         
-        if ($check_stmt && $row = sqlsrv_fetch_array($check_stmt, SQLSRV_FETCH_ASSOC)) {
-            echo "Table '$table' exists: " . ($row['cnt'] > 0 ? 'YES' : 'NO') . "<br>";
-        } else {
-            echo "Table '$table': ERROR checking<br>";
-        }
-        sqlsrv_free_stmt($check_stmt);
+        // Also add as HTML comment for debugging
+        echo "<!-- Timezone Debug - PHP: $php_time, MySQL: $mysql_time -->\n";
     }
-} else {
-    echo "Database connection: <span style='color:red;'>FAILED</span><br>";
 }
 
-echo "<h2>4. Check for Inactive Conversations</h2>";
-$inactive_time = date('Y-m-d H:i:s', strtotime('-30 minutes'));
-echo "<p>Looking for conversations inactive since: $inactive_time</p>";
+echo "<pre>";
+echo "=== Detailed Debug for Conversation 13 ===\n\n";
 
-// Check regular conversations
-$sql = "SELECT 
-            c.conversation_id, 
-            c.number_id,
-            c.initiated_by,
-            c.last_activity,
-            DATEDIFF(MINUTE, c.last_activity, GETDATE()) as minutes_inactive,
-            (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.conversation_id AND m.is_archived = 0) as message_count
-        FROM conversations c
-        WHERE c.is_archived = 0 
-        AND c.last_activity < ?
-        ORDER BY c.last_activity ASC";
+$conversation_id = 13;
 
-$params = array($inactive_time);
-$stmt = sqlsrv_query($conn, $sql, $params);
+// 1. Get full details of conversation 12
+$sql = "SELECT * FROM conversations WHERE conversation_id = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $conversation_id);
+$stmt->execute();
+$result = $stmt->get_result();
+$conv = $result->fetch_assoc();
 
-if ($stmt) {
-    $count = 0;
-    echo "<table border='1' cellpadding='5'>";
-    echo "<tr><th>ID</th><th>Number ID</th><th>Initiated By</th><th>Last Activity</th><th>Minutes Inactive</th><th>Messages</th><th>Status</th></tr>";
-    
-    while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-        $count++;
-        $last_activity = $row['last_activity'];
-        if (is_object($last_activity)) {
-            $last_activity = $last_activity->format('Y-m-d H:i:s');
-        }
-        
-        echo "<tr>";
-        echo "<td>{$row['conversation_id']}</td>";
-        echo "<td>{$row['number_id']}</td>";
-        echo "<td>{$row['initiated_by']}</td>";
-        echo "<td>$last_activity</td>";
-        echo "<td>{$row['minutes_inactive']}</td>";
-        echo "<td>{$row['message_count']}</td>";
-        echo "<td>";
-        
-        // Try to archive this one
-        if (function_exists('archiveConversationImmediately')) {
-            $result = archiveConversationImmediately($conn, $row['conversation_id']);
-            echo $result ? "ARCHIVED SUCCESS" : "ARCHIVE FAILED";
-        } else {
-            echo "Function not available";
-        }
-        
-        echo "</td>";
-        echo "</tr>";
-    }
-    
-    echo "</table>";
-    
-    if ($count == 0) {
-        echo "<p style='color:orange;'>No inactive regular conversations found.</p>";
+if (!$conv) {
+    die("Conversation 12 not found!\n");
+}
+
+echo "1. Conversation Details:\n";
+echo "   - ID: " . $conv['conversation_id'] . "\n";
+echo "   - Number ID: " . $conv['number_id'] . "\n";
+echo "   - Created: " . $conv['created_at'] . "\n";
+echo "   - Last Activity: " . $conv['last_activity'] . "\n";
+echo "   - Is Archived: " . $conv['is_archived'] . "\n";
+
+// Calculate inactivity
+$last_activity = strtotime($conv['last_activity']);
+$now = time();
+$minutes_inactive = round(($now - $last_activity) / 60);
+
+echo "   - Minutes Inactive: " . $minutes_inactive . " minutes\n";
+echo "   - Should be archived (>30 min): " . ($minutes_inactive > 30 ? "YES" : "NO") . "\n";
+
+// 2. Test the archive query directly
+echo "\n2. Testing Archive Query:\n";
+$thirty_minutes_ago = date('Y-m-d H:i:s', strtotime('-30 minutes'));
+echo "   Thirty minutes ago: $thirty_minutes_ago\n";
+echo "   Last Activity: " . $conv['last_activity'] . "\n";
+
+// Check if it meets the criteria
+$meets_criteria = false;
+if ($conv['is_archived'] == 0 || $conv['is_archived'] === null) {
+    echo "   ✓ Not archived\n";
+    if ($conv['last_activity'] < $thirty_minutes_ago) {
+        echo "   ✓ Last activity < 30 minutes ago\n";
+        $meets_criteria = true;
     } else {
-        echo "<p>Found $count inactive regular conversation(s).</p>";
-    }
-    
-    sqlsrv_free_stmt($stmt);
-} else {
-    echo "<p style='color:red;'>Error querying conversations: " . print_r(sqlsrv_errors(), true) . "</p>";
-}
-
-echo "<h2>5. Check for Inactive Admin Chats</h2>";
-if (function_exists('autoArchiveInactiveAdminChats')) {
-    echo "<p>Testing autoArchiveInactiveAdminChats function...</p>";
-    $result = autoArchiveInactiveAdminChats($conn, 30);
-    echo "<p>Result: Archived $result admin chat(s)</p>";
-} else {
-    echo "<p style='color:red;'>autoArchiveInactiveAdminChats function not available</p>";
-}
-
-echo "<h2>6. Manual Archive Test</h2>";
-// Create a test conversation if none exist
-$test_sql = "SELECT TOP 1 conversation_id FROM conversations WHERE is_archived = 0 ORDER BY last_activity ASC";
-$test_stmt = sqlsrv_query($conn, $test_sql);
-
-if ($test_stmt && $row = sqlsrv_fetch_array($test_stmt, SQLSRV_FETCH_ASSOC)) {
-    $test_id = $row['conversation_id'];
-    echo "<p>Found conversation #$test_id to test with</p>";
-    
-    // Update it to be inactive (set last_activity to 31 minutes ago)
-    $old_time = date('Y-m-d H:i:s', strtotime('-31 minutes'));
-    $update_sql = "UPDATE conversations SET last_activity = ? WHERE conversation_id = ?";
-    $update_params = array($old_time, $test_id);
-    $update_stmt = sqlsrv_query($conn, $update_sql, $update_params);
-    
-    if ($update_stmt) {
-        echo "<p>Updated conversation #$test_id last_activity to $old_time</p>";
-        
-        // Now run archive function
-        echo "<p>Running archive function...</p>";
-        $archived = archiveAllInactiveChatsOnLoad($conn);
-        echo "<p>Archive function result: $archived item(s) archived</p>";
-        
-        // Check if it was archived
-        $check_sql = "SELECT is_archived FROM conversations WHERE conversation_id = ?";
-        $check_params = array($test_id);
-        $check_stmt = sqlsrv_query($conn, $check_sql, $check_params);
-        
-        if ($check_stmt && $check_row = sqlsrv_fetch_array($check_stmt, SQLSRV_FETCH_ASSOC)) {
-            echo "<p>Conversation #$test_id is_archived status: " . $check_row['is_archived'] . "</p>";
-            if ($check_row['is_archived'] == 1) {
-                echo "<p style='color:green;'>SUCCESS: Conversation was archived!</p>";
-            } else {
-                echo "<p style='color:red;'>FAILED: Conversation was NOT archived</p>";
-            }
-        }
-    } else {
-        echo "<p style='color:red;'>Failed to update conversation time</p>";
+        echo "   ✗ Last activity NOT < 30 minutes ago\n";
+        echo "   Comparison: " . $conv['last_activity'] . " < " . $thirty_minutes_ago . " = " . 
+             (($conv['last_activity'] < $thirty_minutes_ago) ? "TRUE" : "FALSE") . "\n";
     }
 } else {
-    echo "<p style='color:orange;'>No conversations found to test with</p>";
+    echo "   ✗ Already archived\n";
 }
 
-echo "<h2>7. Server Time vs Database Time</h2>";
-echo "<p>PHP Server Time: " . date('Y-m-d H:i:s') . "</p>";
+// 3. Check timezone issues
+echo "\n3. Timezone Check:\n";
+echo "   PHP time: " . date('Y-m-d H:i:s') . "\n";
+$mysql_time = $conn->query("SELECT NOW() as mysql_time")->fetch_assoc()['mysql_time'];
+echo "   MySQL time: " . $mysql_time . "\n";
 
-$time_sql = "SELECT GETDATE() as db_time";
-$time_stmt = sqlsrv_query($conn, $time_sql);
-if ($time_stmt && $time_row = sqlsrv_fetch_array($time_stmt, SQLSRV_FETCH_ASSOC)) {
-    $db_time = $time_row['db_time'];
-    if (is_object($db_time)) {
-        $db_time = $db_time->format('Y-m-d H:i:s');
+// 4. Check the exact query that runs
+echo "\n4. Exact Archive Query Test:\n";
+$test_sql = "
+    SELECT conversation_id 
+    FROM conversations 
+    WHERE number_id = ? 
+    AND (is_archived = 0 OR is_archived IS NULL)
+    AND last_activity < ?
+";
+$test_stmt = $conn->prepare($test_sql);
+$test_stmt->bind_param("is", $conv['number_id'], $thirty_minutes_ago);
+$test_stmt->execute();
+$test_result = $test_stmt->get_result();
+
+if ($test_result->num_rows > 0) {
+    echo "   Query returns results:\n";
+    while ($row = $test_result->fetch_assoc()) {
+        echo "   - Conversation ID: " . $row['conversation_id'] . "\n";
     }
-    echo "<p>Database Time: $db_time</p>";
+} else {
+    echo "   Query returns NO results\n";
     
-    // Calculate difference
-    $php_time = strtotime(date('Y-m-d H:i:s'));
-    $db_timestamp = strtotime($db_time);
-    $diff = abs($php_time - $db_timestamp);
+    // Check why
+    echo "\n   Debugging why:\n";
+    $debug_sql = "
+        SELECT conversation_id, last_activity, is_archived,
+               last_activity < ? as condition_met
+        FROM conversations 
+        WHERE number_id = ?
+        AND conversation_id = ?
+    ";
+    $debug_stmt = $conn->prepare($debug_sql);
+    $debug_stmt->bind_param("sii", $thirty_minutes_ago, $conv['number_id'], $conversation_id);
+    $debug_stmt->execute();
+    $debug_result = $debug_stmt->get_result();
+    $debug_row = $debug_result->fetch_assoc();
     
-    echo "<p>Time difference: $diff seconds</p>";
-    if ($diff > 60) {
-        echo "<p style='color:red;'>WARNING: Server and database times differ by more than 1 minute!</p>";
-    }
+    echo "   For conversation 12:\n";
+    echo "   - last_activity < '$thirty_minutes_ago' = " . $debug_row['condition_met'] . "\n";
+    echo "   - last_activity = " . $debug_row['last_activity'] . "\n";
+    echo "   - is_archived = " . $debug_row['is_archived'] . "\n";
 }
 
-echo "<h2>Debug Complete</h2>";
+echo "</pre>";
 ?>

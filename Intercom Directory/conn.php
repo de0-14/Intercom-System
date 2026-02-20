@@ -243,7 +243,12 @@ function getOnlineAdmins($conn) {
 
 function updateAllUsersActivity($conn) {
     if (isset($_SESSION['user_id'])) {
-        updateUserActivity($conn, $_SESSION['user_id']);
+        $current_time = time(); // Use integer timestamp
+        $sql = "UPDATE users SET last_activity = ? WHERE user_id = ?";
+        $stmt = sqlsrv_query($conn, $sql, array($current_time, $_SESSION['user_id']));
+        if ($stmt) {
+            sqlsrv_free_stmt($stmt);
+        }
     }
 }
 
@@ -260,28 +265,38 @@ function getHeadUserId($conn, $number_id) {
 }
 
 function getOnlineUsers($conn) {
-    $timeout = 300;
+    $timeout = 300; // 5 minutes
     $onlineTime = time() - $timeout;
     
-    $sql = "SELECT u.user_id, u.username, u.full_name, u.role_id, r.role_name 
-            FROM users u 
-            JOIN roles r ON u.role_id = r.role_id
-            WHERE u.last_activity > ? 
-            AND u.status = 'active'
-            ORDER BY u.role_id, u.full_name";
+    // Since last_activity is stored as an integer (Unix timestamp)
+    // Compare directly with the integer timestamp
+    $sql = "SELECT 
+                u.user_id, 
+                u.username, 
+                u.full_name, 
+                u.role_id,
+                u.last_activity,
+                r.role_name
+            FROM users u
+            LEFT JOIN roles r ON u.role_id = r.role_id
+            WHERE u.last_activity > ?
+            ORDER BY u.last_activity DESC";
     
-    $params = array($onlineTime);
-    $stmt = sqlsrv_prepare($conn, $sql, $params);
-    if(!$stmt) return [];
+    $params = array($onlineTime); // Pass integer directly, not formatted date
+    $stmt = sqlsrv_query($conn, $sql, $params);
     
-    if(!sqlsrv_execute($stmt)) return [];
-    
-    $users = [];
-    while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-        $users[] = $row;
+    if ($stmt === false) {
+        error_log("getOnlineUsers SQL Error: " . print_r(sqlsrv_errors(), true));
+        return [];
     }
     
-    return $users;
+    $online_users = [];
+    while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        $online_users[] = $row;
+    }
+    
+    sqlsrv_free_stmt($stmt);
+    return $online_users;
 }
 
 function createAdminChatConversation($conn, $admin_id, $user_id) {

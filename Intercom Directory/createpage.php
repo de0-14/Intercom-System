@@ -634,6 +634,43 @@ ul.nav { display:flex; list-style:none; gap:8px; }
 ul.nav li a { display:block; color:white; text-decoration:none; padding:10px 18px; font-weight:600; border-radius:6px; transition:all 0.2s; }
 ul.nav li a:hover { background-color:rgba(255,255,255,0.2); }
 
+/* --- NOTIFICATION SYSTEM - Like homepage.php --- */
+.notification-indicator { position: relative; }
+.nav-notification-badge { background-color: #e53e3e; color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; min-width: 18px; text-align: center; margin-left: 5px; animation: pulse 2s infinite; display: none; }
+.admin-notification-container { position: relative; display: inline-block; margin-left: 10px; }
+.admin-notification-btn { width: 50px; height: 50px; border-radius: 50%; background: linear-gradient(135deg, #e53e3e, #c53030); color: white; border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 20px; box-shadow: 0 3px 10px rgba(229, 62, 62, 0.3); transition: all 0.3s; position: relative; }
+.admin-notification-btn:hover { background: linear-gradient(135deg, #c53030, #9b2c2c); transform: scale(1.05); box-shadow: 0 5px 15px rgba(229, 62, 62, 0.4); }
+.notification-bell-badge { position: absolute; top: -5px; right: -5px; background-color: #e53e3e; color: white; font-size: 12px; padding: 3px 8px; border-radius: 10px; min-width: 24px; text-align: center; font-weight: bold; border: 2px solid white; animation: pulse 1.5s infinite; display: none; }
+.notification-dropdown { position: absolute; top: 100%; right: 0; width: 350px; background: white; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.15); margin-top: 15px; padding: 0; z-index: 1000; opacity: 0; visibility: hidden; transform: translateY(-10px); transition: all 0.3s; }
+.admin-notification-container:hover .notification-dropdown { opacity: 1; visibility: visible; transform: translateY(0); }
+.notification-header { padding: 15px; background: #2b6cb0; color: white; border-radius: 8px 8px 0 0; }
+.notification-header h4 { margin: 0; color: white; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.notification-list { max-height: 400px; overflow-y: auto; padding: 10px; }
+.notification-item { display: flex; align-items: center; padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #e2e8f0; transition: all 0.2s; text-decoration: none; color: inherit; }
+.notification-item:hover { background-color: #f7fafc; border-color: #cbd5e0; }
+.notification-avatar { width: 40px; height: 40px; border-radius: 50%; background: #2b6cb0; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 12px; font-size: 16px; }
+.notification-info { flex: 1; }
+.notification-name { font-weight: 600; color: #2d3748; margin-bottom: 3px; font-size: 14px; }
+.notification-meta { font-size: 12px; color: #718096; display: flex; align-items: center; gap: 8px; }
+.notification-time { color: #a0aec0; }
+.message-count-badge { background-color: #e53e3e; color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; min-width: 20px; text-align: center; font-weight: bold; }
+.no-notifications { text-align: center; padding: 30px 20px; color: #a0aec0; font-style: italic; }
+.notification-footer { padding: 12px; border-top: 1px solid #e2e8f0; text-align: center; }
+.view-all-btn { display: inline-block; padding: 8px 16px; background-color: #2b6cb0; color: white; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 500; transition: background-color 0.2s; }
+.view-all-btn:hover { background-color: #1f4f8b; }
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+/* Active link styling */
+ul.nav li a.active {
+    background-color: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
 /* --- CONTENT --- */
 .content { flex:1; margin-top:100px; padding:20px; }
 
@@ -754,218 +791,54 @@ ul.nav li a:hover { background-color:rgba(255,255,255,0.2); }
     font-style: italic;
 }
 
-/* Notification dropdown styles from homepage.php */
-.admin-notification-container {
-    position: relative;
-    display: inline-block;
-    margin-left: 10px;
-}
-
-.admin-notification-btn {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #e53e3e, #c53030);
-    color: white;
-    border: 3px solid white;
-    cursor: pointer;
+/* Toast notification styles */
+.notification-toast-container {
+    position: fixed;
+    top: 120px;
+    right: 20px;
+    z-index: 9999;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    font-size: 20px;
-    box-shadow: 0 3px 10px rgba(229, 62, 62, 0.3);
-    transition: all 0.3s;
-    position: relative;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 350px;
 }
-
-.admin-notification-btn:hover {
-    background: linear-gradient(135deg, #c53030, #9b2c2c);
-    transform: scale(1.05);
-    box-shadow: 0 5px 15px rgba(229, 62, 62, 0.4);
-}
-
-.notification-dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    width: 350px;
+.notification-toast {
     background: white;
     border-radius: 8px;
-    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
-    margin-top: 15px;
-    padding: 0;
-    z-index: 1000;
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(-10px);
-    transition: all 0.3s;
-}
-
-.admin-notification-container:hover .notification-dropdown {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
-}
-
-.notification-header {
     padding: 15px;
-    background: #2b6cb0;
-    color: white;
-    border-radius: 8px 8px 0 0;
-}
-
-.notification-header h4 {
-    margin: 0;
-    color: white;
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.notification-list {
-    max-height: 400px;
-    overflow-y: auto;
-    padding: 10px;
-}
-
-.notification-item {
-    display: flex;
-    align-items: center;
-    padding: 12px;
-    border-radius: 8px;
-    margin-bottom: 8px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+    border-left: 4px solid #e53e3e;
+    animation: slideIn 0.3s ease-out;
+    cursor: pointer;
+    transition: transform 0.2s;
     border: 1px solid #e2e8f0;
-    transition: all 0.2s;
-    text-decoration: none;
-    color: inherit;
 }
-
-.notification-item:hover {
-    background-color: #f7fafc;
-    border-color: #cbd5e0;
+.notification-toast:hover {
+    transform: translateX(-5px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
 }
-
-.notification-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: #2b6cb0;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.notification-toast-title {
     font-weight: bold;
-    margin-right: 12px;
-    font-size: 16px;
-}
-
-.notification-info {
-    flex: 1;
-}
-
-.notification-name {
-    font-weight: 600;
     color: #2d3748;
-    margin-bottom: 3px;
+    margin-bottom: 5px;
     font-size: 14px;
 }
-
-.notification-meta {
-    font-size: 12px;
-    color: #718096;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.notification-time {
-    color: #a0aec0;
-}
-
-.message-count-badge {
-    background-color: #e53e3e;
-    color: white;
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 10px;
-    min-width: 20px;
-    text-align: center;
-    font-weight: bold;
-}
-
-.no-notifications {
-    text-align: center;
-    padding: 30px 20px;
-    color: #a0aec0;
-    font-style: italic;
-}
-
-.notification-footer {
-    padding: 12px;
-    border-top: 1px solid #e2e8f0;
-    text-align: center;
-}
-
-.view-all-btn {
-    display: inline-block;
-    padding: 8px 16px;
-    background-color: #2b6cb0;
-    color: white;
-    border-radius: 6px;
-    text-decoration: none;
+.notification-toast-message {
+    color: #4a5568;
     font-size: 13px;
-    font-weight: 500;
-    transition: background-color 0.2s;
 }
-
-.view-all-btn:hover {
-    background-color: #1f4f8b;
-}
-
-.notification-bell-badge {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background-color: #e53e3e;
-    color: white;
-    font-size: 12px;
-    padding: 3px 8px;
-    border-radius: 10px;
-    min-width: 24px;
-    text-align: center;
-    font-weight: bold;
-    border: 2px solid white;
-    animation: pulse 1.5s infinite;
-}
-
-.nav-notification-badge {
-    background-color: #e53e3e;
-    color: white;
+.notification-toast-time {
     font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 10px;
-    min-width: 18px;
-    text-align: center;
-    margin-left: 5px;
-    animation: pulse 2s infinite;
-    display: inline-block;
+    color: #a0aec0;
+    margin-top: 5px;
+    text-align: right;
+}
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
 }
 
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.1); }
-    100% { transform: scale(1); }
-}
-
-/* Active link styling */
-ul.nav li a.active {
-    background-color: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.3);
-}
-
-/* Head type indicator */
+/* Head type info */
 .head-type-info {
     font-size: 12px;
     color: #38a169;
@@ -986,16 +859,17 @@ ul.nav li a.active {
             <?php if (isAdmin()): ?>
                 <li><a href="createpage.php" class="active">Create page</a></li>
                 <li><a href="editpage.php">Edit page</a></li>
-                <li>
-                    <a href="adminpanel.php" class="notification-indicator">
+                <li class="notification-indicator">
+                    <a href="adminpanel.php" id="operatorPanelLink">
                         Operator Panel 
-                        <?php if ($admin_notifications_count > 0): ?>
-                            <span class="nav-notification-badge"><?php echo $admin_notifications_count; ?></span>
-                        <?php endif; ?>
+                        <span class="nav-notification-badge" id="operatorPanelBadge" style="display: none;">0</span>
                     </a>
                 </li>
             <?php else: ?>
-                <li><a href="adminchat.php">Chat with an Operator <?php echo $user_unread > 0 ? "($user_unread)" : ""; ?></a></li>
+                <li><a href="adminchat.php" id="adminChatNavLink">
+                    Chat with Admin 
+                    <span class="nav-notification-badge" id="adminChatNavBadge" style="display: none;">0</span>
+                </a></li>
             <?php endif; ?>
             <li><a href="profilepage.php">Profile</a></li>
             <li><a href="logout.php">Logout (<?php echo getUserName(); ?>)</a></li>
@@ -1008,15 +882,13 @@ ul.nav li a.active {
     <div class="admin-notification-container">
         <button class="admin-notification-btn" id="adminNotificationBtn">
             🔔
-            <?php if($admin_notifications_count > 0): ?>
-                <span class="notification-bell-badge"><?php echo $admin_notifications_count; ?></span>
-            <?php endif; ?>
+            <span class="notification-bell-badge" id="notificationBellBadge" style="display: none;">0</span>
         </button>
         <div class="notification-dropdown" id="notificationDropdown">
             <div class="notification-header">
-                <h4>📨 New Chat Requests (<?php echo $admin_notifications_count; ?>)</h4>
+                <h4>📨 New Chat Requests (<span id="adminNotificationCount">0</span>)</h4>
             </div>
-            <div class="notification-list">
+            <div class="notification-list" id="adminNotificationList">
                 <?php if(!empty($admin_chat_requests)): ?>
                     <?php foreach($admin_chat_requests as $request): 
                         $chat_id = getAdminChatWithUser($conn, $user_id, $request['user_id']);
@@ -1052,6 +924,9 @@ ul.nav li a.active {
     </div>
     <?php endif; ?>
 </div>
+
+<!-- Notification Toast Container -->
+<div id="notificationToastContainer" class="notification-toast-container"></div>
 
 <div class="content">
     <div class="big-container">
@@ -1091,7 +966,7 @@ ul.nav li a.active {
             </div>
             
             <div class="form-group">
-                <label for="email">Email Address</label>
+                <label for="email">Organization Email Address</label>
                 <input type="email" name="email" id="email" placeholder="e.g., department@hospital.com">
                 <div class="contact-hint">Note: At least one contact method is required (email OR phone number). Multiple phone numbers will be combined in one field.</div>
             </div>
@@ -1135,8 +1010,8 @@ ul.nav li a.active {
             </div>
             
             <div class="form-group">
-                <label>Contact Numbers</label>
-                <button type="button" id="add-number-btn"><span>+</span> Add Contact Number</button>
+                <label>Contact Information</label>
+                <button type="button" id="add-number-btn"><span>+</span> Add Contact Information</button>
                 <div id="numbers-container"></div>
             </div>
             
@@ -1166,6 +1041,278 @@ document.addEventListener('DOMContentLoaded', function() {
     const underDivisionSelect = document.getElementById('under_division');
     let numberCounter = 0;
     
+    // ===========================================
+    // DYNAMIC NOTIFICATION SYSTEM
+    // ===========================================
+    
+    let userId = <?php echo $user_id ?: 'null'; ?>;
+    let isAdmin = <?php echo $is_admin ? 'true' : 'false'; ?>;
+    let notificationCheckInterval;
+    let shownToastIds = new Set();
+    
+    function startNotificationChecking() {
+        if (notificationCheckInterval) {
+            clearInterval(notificationCheckInterval);
+        }
+        checkNotifications();
+        notificationCheckInterval = setInterval(checkNotifications, 3000);
+    }
+    
+    function checkNotifications() {
+        if (!userId) return;
+        
+        fetch('check_notifications.php?t=' + Date.now())
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateAllNotifications(data);
+                    checkForNewToasts(data);
+                }
+            })
+            .catch(error => console.error('Notification check error:', error));
+    }
+    
+    function updateAllNotifications(data) {
+        const allNotifications = data.notifications || [];
+        
+        const adminRequests = allNotifications.filter(n => n.type === 'admin_chat_request');
+        const adminMessages = allNotifications.filter(n => n.type === 'admin_chat_message');
+        const adminReplies = allNotifications.filter(n => n.type === 'admin_reply');
+        
+        if (isAdmin) {
+            // Operator Panel badge - NEW CHAT REQUESTS only
+            const operatorPanelCount = adminRequests.length;
+            updateOperatorPanelBadge(operatorPanelCount);
+            
+            // Bell badge - ALL admin notifications
+            const totalAdminNotifications = adminRequests.length + adminMessages.length;
+            updateBellBadge(totalAdminNotifications);
+            
+            // Admin notification dropdown
+            updateAdminNotificationDropdown([...adminRequests, ...adminMessages]);
+        } else {
+            // Admin chat badge for regular users
+            const adminReplyCount = adminReplies.reduce((sum, n) => sum + (n.unread_count || 0), 0);
+            updateAdminChatBadge(adminReplyCount);
+        }
+    }
+    
+    function updateOperatorPanelBadge(count) {
+        const badge = document.getElementById('operatorPanelBadge');
+        if (!badge) return;
+        
+        if (count > 0) {
+            badge.textContent = count;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+    
+    function updateBellBadge(totalUnread) {
+        const bellBadge = document.getElementById('notificationBellBadge');
+        if (bellBadge) {
+            if (totalUnread > 0) {
+                bellBadge.textContent = totalUnread;
+                bellBadge.style.display = 'inline-block';
+            } else {
+                bellBadge.style.display = 'none';
+            }
+        }
+        
+        const adminCountSpan = document.getElementById('adminNotificationCount');
+        if (adminCountSpan) {
+            adminCountSpan.textContent = totalUnread;
+        }
+    }
+    
+    function updateAdminNotificationDropdown(notifications) {
+        const notificationList = document.getElementById('adminNotificationList');
+        if (!notificationList) return;
+        
+        if (notifications.length === 0) {
+            notificationList.innerHTML = '<div class="no-notifications">No new messages</div>';
+            return;
+        }
+        
+        let html = '';
+        const uniqueNotifs = new Map();
+        
+        notifications.forEach(notif => {
+            const key = notif.type === 'admin_chat_request' 
+                ? `req_${notif.user_id}` 
+                : `msg_${notif.chat_id}`;
+            
+            if (!uniqueNotifs.has(key)) {
+                uniqueNotifs.set(key, notif);
+            }
+        });
+        
+        uniqueNotifs.forEach(notif => {
+            let chatLink = '';
+            let displayName = '';
+            let timeStr = '';
+            let badgeText = '';
+            
+            if (notif.type === 'admin_chat_request') {
+                chatLink = notif.chat_id
+                    ? `adminpanel.php?chat_id=${notif.chat_id}`
+                    : `adminpanel.php?start_chat=${notif.user_id}`;
+                displayName = notif.full_name || 'User';
+                timeStr = timeAgoFromString(notif.first_message_time);
+                badgeText = notif.message_count > 1 ? `${notif.message_count} messages` : 'New message';
+            } else {
+                chatLink = `adminpanel.php?chat_id=${notif.chat_id}`;
+                displayName = notif.full_name || 'User';
+                timeStr = timeAgoFromString(notif.last_message_time);
+                badgeText = notif.unread_count > 1 ? `${notif.unread_count} messages` : 'New message';
+            }
+            
+            html += `
+                <a href="${chatLink}" class="notification-item">
+                    <div class="notification-avatar">${escapeHtml(displayName.charAt(0).toUpperCase())}</div>
+                    <div class="notification-info">
+                        <div class="notification-name">${escapeHtml(displayName)}</div>
+                        <div class="notification-meta">
+                            <span class="notification-time">${timeStr}</span>
+                            <span class="message-count-badge">${badgeText}</span>
+                        </div>
+                    </div>
+                </a>
+            `;
+        });
+        
+        notificationList.innerHTML = html;
+    }
+    
+    function updateAdminChatBadge(count) {
+        const adminChatBadge = document.getElementById('adminChatNavBadge');
+        if (adminChatBadge) {
+            if (count > 0) {
+                adminChatBadge.textContent = count;
+                adminChatBadge.style.display = 'inline-block';
+            } else {
+                adminChatBadge.style.display = 'none';
+            }
+        }
+    }
+    
+    function checkForNewToasts(data) {
+        const allNotifications = data.notifications || [];
+        
+        let relevantNotifications;
+        if (isAdmin) {
+            relevantNotifications = allNotifications.filter(n => 
+                n.type === 'admin_chat_request' || n.type === 'admin_chat_message'
+            );
+        } else {
+            relevantNotifications = allNotifications.filter(n => 
+                n.type === 'admin_reply'
+            );
+        }
+        
+        relevantNotifications.forEach(notif => {
+            let notifId;
+            if (notif.type === 'admin_chat_request') {
+                notifId = `toast_req_${notif.user_id}_${notif.first_message_time}`;
+            } else if (notif.type === 'admin_chat_message') {
+                notifId = `toast_msg_${notif.chat_id}_${notif.last_message_time}`;
+            } else {
+                notifId = `toast_reply_${notif.chat_id}_${notif.last_message_time}`;
+            }
+            
+            if (!shownToastIds.has(notifId)) {
+                shownToastIds.add(notifId);
+                showNotificationToast(notif);
+                
+                if (shownToastIds.size > 100) {
+                    const iterator = shownToastIds.values();
+                    shownToastIds.delete(iterator.next().value);
+                }
+            }
+        });
+    }
+    
+    function showNotificationToast(notif) {
+        const container = document.getElementById('notificationToastContainer');
+        if (!container) return;
+        
+        const toasts = container.children;
+        if (toasts.length >= 3) {
+            toasts[0].remove();
+        }
+        
+        const toast = document.createElement('div');
+        toast.className = 'notification-toast';
+        
+        let title = '';
+        let message = '';
+        let link = '';
+        
+        if (notif.type === 'admin_chat_request') {
+            title = `📨 New chat request from ${escapeHtml(notif.full_name || 'User')}`;
+            message = notif.message_count > 1 ? `${notif.message_count} messages` : 'New message';
+            link = notif.chat_id ? `adminpanel.php?chat_id=${notif.chat_id}` : `adminpanel.php?start_chat=${notif.user_id}`;
+        } else if (notif.type === 'admin_chat_message') {
+            title = `💬 New message from ${escapeHtml(notif.full_name || 'User')}`;
+            message = notif.unread_count > 1 ? `${notif.unread_count} messages` : 'New message';
+            link = `adminpanel.php?chat_id=${notif.chat_id}`;
+        } else if (notif.type === 'admin_reply') {
+            title = `👤 Reply from Admin ${escapeHtml(notif.admin_name || '')}`;
+            message = notif.unread_count > 1 ? `${notif.unread_count} messages` : 'New message';
+            link = `adminchat.php?chat_id=${notif.chat_id}`;
+        }
+        
+        toast.innerHTML = `
+            <div class="notification-toast-title">${title}</div>
+            <div class="notification-toast-message">${message}</div>
+            <div class="notification-toast-time">Just now</div>
+        `;
+        
+        toast.addEventListener('click', () => {
+            window.location.href = link;
+        });
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.animation = 'slideIn 0.3s reverse';
+            setTimeout(() => toast.remove(), 300);
+        }, 5000);
+    }
+    
+    function timeAgoFromString(dateString) {
+        if (!dateString) return 'recently';
+        try {
+            const date = new Date(dateString);
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+            
+            if (seconds < 60) return 'just now';
+            if (seconds < 3600) return Math.floor(seconds / 60) + ' min ago';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + ' hours ago';
+            return Math.floor(seconds / 86400) + ' days ago';
+        } catch (e) {
+            return 'recently';
+        }
+    }
+    
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Start notification checking
+    if (userId) {
+        startNotificationChecking();
+    }
+    
+    // ===========================================
+    // END NOTIFICATION SYSTEM
+    // ===========================================
+    
     // Notification dropdown functionality
     const notificationBtn = document.getElementById('adminNotificationBtn');
     const notificationDropdown = document.getElementById('notificationDropdown');
@@ -1173,7 +1320,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if(notificationBtn && notificationDropdown) {
         notificationBtn.addEventListener('click', function(e) {
             e.stopPropagation();
-            if(notificationDropdown.style.opacity === '1') {
+            if(notificationDropdown.style.visibility === 'visible') {
                 notificationDropdown.style.opacity = '0';
                 notificationDropdown.style.visibility = 'hidden';
                 notificationDropdown.style.transform = 'translateY(-10px)';
@@ -1245,7 +1392,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function updateHeadTypeInfo(createType) {
         const infoText = {
-            'division': 'Note: Only users with role "Division Head" or higher can be selected.',
+            'division': 'Note: Only users with role "Division Head" can be selected.',
             'department': 'Note: You can choose from Division Heads or Department Heads.',
             'unit': 'Note: You can choose from Division Heads, Department Heads, or Unit Heads.',
             'office': 'Note: You can choose from Division Heads, Department Heads, Unit Heads, or Office Heads.'

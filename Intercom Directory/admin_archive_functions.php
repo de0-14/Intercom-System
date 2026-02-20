@@ -1,4 +1,9 @@
 <?php
+// admin_archive_functions.php
+
+/**
+ * Archive an admin chat immediately (copy to archive tables)
+ */
 function archiveAdminChatImmediately($conn, $chat_id) {
     try {
         sqlsrv_begin_transaction($conn);
@@ -11,7 +16,7 @@ function archiveAdminChatImmediately($conn, $chat_id) {
         if ($check_stmt && sqlsrv_has_rows($check_stmt)) {
             sqlsrv_free_stmt($check_stmt);
             sqlsrv_commit($conn);
-            return false;
+            return false; // Already archived
         }
         sqlsrv_free_stmt($check_stmt);
         
@@ -21,25 +26,17 @@ function archiveAdminChatImmediately($conn, $chat_id) {
         $get_chat_stmt = sqlsrv_query($conn, $get_chat_sql, $get_chat_params);
         
         if (!$get_chat_stmt || !sqlsrv_has_rows($get_chat_stmt)) {
-            if ($get_chat_stmt) sqlsrv_free_stmt($get_chat_stmt);
+            sqlsrv_free_stmt($get_chat_stmt);
             throw new Exception("Chat not found or already archived");
         }
         
         $chat_data = sqlsrv_fetch_array($get_chat_stmt, SQLSRV_FETCH_ASSOC);
         sqlsrv_free_stmt($get_chat_stmt);
         
-        // 3. Insert into admin_chats_archive - NOW includes chat_id!
+        // 3. Insert into admin_chats_archive
         $insert_chat_sql = "
-            INSERT INTO admin_chats_archive 
-            (chat_id, admin_id, user_id, created_at, is_archived, archived_at, last_activity)
-            SELECT 
-                chat_id,
-                admin_id, 
-                user_id, 
-                created_at, 
-                1, 
-                GETDATE(), 
-                last_activity
+            INSERT INTO admin_chats_archive (chat_id, admin_id, user_id, created_at, is_archived, archived_at, last_activity)
+            SELECT chat_id, admin_id, user_id, created_at, 1, GETDATE(), last_activity
             FROM admin_chats 
             WHERE chat_id = ?
         ";
@@ -47,24 +44,14 @@ function archiveAdminChatImmediately($conn, $chat_id) {
         $insert_chat_stmt = sqlsrv_query($conn, $insert_chat_sql, $insert_chat_params);
         
         if (!$insert_chat_stmt) {
-            $errors = sqlsrv_errors();
-            throw new Exception("Failed to insert chat into archive: " . print_r($errors, true));
+            throw new Exception("Failed to insert chat into archive: " . print_r(sqlsrv_errors(), true));
         }
         sqlsrv_free_stmt($insert_chat_stmt);
         
-        // 4. Copy messages - NOW includes message_id!
+        // 4. Copy messages to admin_messages_archive
         $copy_msgs_sql = "
-            INSERT INTO admin_messages_archive 
-            (message_id, chat_id, sender_id, message, created_at, is_read, is_archived, archived_at)
-            SELECT 
-                message_id,
-                chat_id, 
-                sender_id, 
-                message, 
-                created_at, 
-                is_read, 
-                1, 
-                GETDATE()
+            INSERT INTO admin_messages_archive (message_id, chat_id, sender_id, message, created_at, is_read, is_archived, archived_at)
+            SELECT message_id, chat_id, sender_id, message, created_at, is_read, 1, GETDATE()
             FROM admin_messages 
             WHERE chat_id = ?
         ";
@@ -72,9 +59,19 @@ function archiveAdminChatImmediately($conn, $chat_id) {
         $copy_msgs_stmt = sqlsrv_query($conn, $copy_msgs_sql, $copy_msgs_params);
         
         if (!$copy_msgs_stmt) {
-            $errors = sqlsrv_errors();
-            throw new Exception("Failed to copy messages to archive: " . print_r($errors, true));
+            throw new Exception("Failed to copy messages to archive: " . print_r(sqlsrv_errors(), true));
         }
+        
+        // Get number of rows affected (SQL Server doesn't have affected_rows like MySQL)
+        $copied_count = 0;
+        $row_count_sql = "SELECT @@ROWCOUNT as row_count";
+        $row_count_stmt = sqlsrv_query($conn, $row_count_sql);
+        if ($row_count_stmt && sqlsrv_fetch($row_count_stmt)) {
+            $row_data = sqlsrv_get_field($row_count_stmt, 0);
+            $copied_count = $row_data;
+        }
+        if ($row_count_stmt) sqlsrv_free_stmt($row_count_stmt);
+        
         sqlsrv_free_stmt($copy_msgs_stmt);
         
         // 5. Delete messages from main table
@@ -83,12 +80,11 @@ function archiveAdminChatImmediately($conn, $chat_id) {
         $delete_msgs_stmt = sqlsrv_query($conn, $delete_msgs_sql, $delete_msgs_params);
         
         if (!$delete_msgs_stmt) {
-            $errors = sqlsrv_errors();
-            throw new Exception("Failed to delete admin messages: " . print_r($errors, true));
+            throw new Exception("Failed to delete admin messages: " . print_r(sqlsrv_errors(), true));
         }
         sqlsrv_free_stmt($delete_msgs_stmt);
         
-        // 6. Mark chat as archived in main table
+        // 6. Mark chat as archived in main table (DO NOT DELETE, just mark as archived)
         $mark_archived_sql = "
             UPDATE admin_chats 
             SET is_archived = 1, archived_at = GETDATE() 
@@ -98,8 +94,7 @@ function archiveAdminChatImmediately($conn, $chat_id) {
         $mark_archived_stmt = sqlsrv_query($conn, $mark_archived_sql, $mark_archived_params);
         
         if (!$mark_archived_stmt) {
-            $errors = sqlsrv_errors();
-            throw new Exception("Failed to mark chat as archived: " . print_r($errors, true));
+            throw new Exception("Failed to mark chat as archived: " . print_r(sqlsrv_errors(), true));
         }
         sqlsrv_free_stmt($mark_archived_stmt);
         
@@ -113,6 +108,9 @@ function archiveAdminChatImmediately($conn, $chat_id) {
     }
 }
 
+/**
+ * Remove old archived admin chats (archived for 7+ days)
+ */
 function removeOldArchivedAdminChats($conn, $admin_id = null, $user_id = null, $cutoff_date = null) {
     $removed_count = 0;
     
@@ -142,7 +140,7 @@ function removeOldArchivedAdminChats($conn, $admin_id = null, $user_id = null, $
         
         $where_sql = implode(" AND ", $where_conditions);
         
-        // First get chat IDs (these are the original chat_ids, not the identity column)
+        // First get chat IDs
         $get_ids_sql = "
             SELECT chat_id 
             FROM admin_chats_archive 
@@ -184,10 +182,17 @@ function removeOldArchivedAdminChats($conn, $admin_id = null, $user_id = null, $
         }
         
         // Get row count
-        $removed_count = sqlsrv_rows_affected($delete_chat_stmt);
-        sqlsrv_free_stmt($delete_chat_stmt);
+        $row_count_sql = "SELECT @@ROWCOUNT as row_count";
+        $row_count_stmt = sqlsrv_query($conn, $row_count_sql);
+        if ($row_count_stmt && sqlsrv_fetch($row_count_stmt)) {
+            $row_data = sqlsrv_get_field($row_count_stmt, 0);
+            $removed_count = $row_data;
+        }
+        if ($row_count_stmt) sqlsrv_free_stmt($row_count_stmt);
         
+        sqlsrv_free_stmt($delete_chat_stmt);
         sqlsrv_commit($conn);
+        
         return $removed_count;
         
     } catch (Exception $e) {
@@ -293,57 +298,21 @@ function getActiveAdminChats($conn, $user_id, $is_admin = true) {
  */
 function getArchivedAdminChats($conn, $user_id, $is_admin = true) {
     if($is_admin) {
-        $sql = "
-            SELECT 
-                ac.*, 
-                u.username, 
-                u.full_name, 
-                u.role_id,
-                -- Get the last message from archive
-                (
-                    SELECT TOP 1 message 
-                    FROM admin_messages_archive 
-                    WHERE chat_id = ac.chat_id 
-                    ORDER BY created_at DESC
-                ) as last_message,
-                (
-                    SELECT TOP 1 created_at 
-                    FROM admin_messages_archive 
-                    WHERE chat_id = ac.chat_id 
-                    ORDER BY created_at DESC
-                ) as last_message_time
-            FROM admin_chats_archive ac 
-            JOIN users u ON ac.user_id = u.user_id 
-            WHERE ac.admin_id = ? 
-            AND ac.is_archived = 1
-            ORDER BY ac.archived_at DESC
-        ";
+        $sql = "SELECT ac.*, u.username, u.full_name, u.role_id, 
+                (SELECT TOP 1 message FROM admin_messages_archive WHERE chat_id = ac.chat_id ORDER BY created_at DESC) as last_message,
+                (SELECT TOP 1 created_at FROM admin_messages_archive WHERE chat_id = ac.chat_id ORDER BY created_at DESC) as last_message_time
+                FROM admin_chats_archive ac 
+                JOIN users u ON ac.user_id = u.user_id 
+                WHERE ac.admin_id = ? AND ac.is_archived = 1
+                ORDER BY ac.archived_at DESC";
     } else {
-        $sql = "
-            SELECT 
-                ac.*, 
-                u.username, 
-                u.full_name, 
-                u.role_id,
-                -- Get the last message from archive
-                (
-                    SELECT TOP 1 message 
-                    FROM admin_messages_archive 
-                    WHERE chat_id = ac.chat_id 
-                    ORDER BY created_at DESC
-                ) as last_message,
-                (
-                    SELECT TOP 1 created_at 
-                    FROM admin_messages_archive 
-                    WHERE chat_id = ac.chat_id 
-                    ORDER BY created_at DESC
-                ) as last_message_time
-            FROM admin_chats_archive ac 
-            JOIN users u ON ac.admin_id = u.user_id 
-            WHERE ac.user_id = ? 
-            AND ac.is_archived = 1
-            ORDER BY ac.archived_at DESC
-        ";
+        $sql = "SELECT ac.*, u.username, u.full_name, u.role_id, 
+                (SELECT TOP 1 message FROM admin_messages_archive WHERE chat_id = ac.chat_id ORDER BY created_at DESC) as last_message,
+                (SELECT TOP 1 created_at FROM admin_messages_archive WHERE chat_id = ac.chat_id ORDER BY created_at DESC) as last_message_time
+                FROM admin_chats_archive ac 
+                JOIN users u ON ac.admin_id = u.user_id 
+                WHERE ac.user_id = ? AND ac.is_archived = 1
+                ORDER BY ac.archived_at DESC";
     }
     
     $params = array($user_id);
@@ -356,6 +325,7 @@ function getArchivedAdminChats($conn, $user_id, $is_admin = true) {
     
     $chats = [];
     while($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        // Ensure all expected fields exist
         $row['last_message'] = $row['last_message'] ?? 'No messages';
         $row['last_message_time'] = $row['last_message_time'] ?? null;
         $chats[] = $row;
@@ -370,38 +340,33 @@ function getArchivedAdminChats($conn, $user_id, $is_admin = true) {
  */
 function getArchivedAdminMessages($conn, $chat_id, $user_id) {
     try {
-        // First, check if the chat exists in archive with this chat_id
+        // Check if user has permission to view archived messages
         $check_sql = "
-            SELECT 
-                ac.*,
-                -- Get the other user's full name properly
-                CASE 
-                    WHEN ? = ac.admin_id THEN u_user.full_name
-                    ELSE u_admin.full_name
-                END as other_full_name,
-                CASE 
-                    WHEN ? = ac.admin_id THEN 'admin'
-                    ELSE 'user'
-                END as user_type,
-                -- Also get both users' names for reference
-                u_admin.full_name as admin_name,
-                u_admin.user_id as admin_id,
-                u_user.full_name as user_name,
-                u_user.user_id as user_id
+            SELECT ac.*, 
+                   CASE 
+                       WHEN ? = ac.admin_id THEN u1.username
+                       ELSE u2.username
+                   END as other_name,
+                   CASE 
+                       WHEN ? = ac.admin_id THEN u1.full_name
+                       ELSE u2.full_name
+                   END as other_full_name,
+                   CASE 
+                       WHEN ? = ac.admin_id THEN 'admin'
+                       ELSE 'user'
+                   END as user_type
             FROM admin_chats_archive ac
-            LEFT JOIN users u_admin ON ac.admin_id = u_admin.user_id
-            LEFT JOIN users u_user ON ac.user_id = u_user.user_id
+            LEFT JOIN users u1 ON ac.user_id = u1.user_id
+            LEFT JOIN users u2 ON ac.admin_id = u2.user_id
             WHERE ac.chat_id = ?
             AND (? = ac.admin_id OR ? = ac.user_id)
         ";
         
-        $params = array($user_id, $user_id, $chat_id, $user_id, $user_id);
+        $params = array($user_id, $user_id, $user_id, $chat_id, $user_id, $user_id);
         $stmt = sqlsrv_query($conn, $check_sql, $params);
         
         if (!$stmt) {
-            $errors = sqlsrv_errors();
-            error_log("Check query error: " . print_r($errors, true));
-            throw new Exception("Check failed: " . print_r($errors, true));
+            throw new Exception("Prepare failed: " . print_r(sqlsrv_errors(), true));
         }
         
         if (!sqlsrv_has_rows($stmt)) {
@@ -414,7 +379,7 @@ function getArchivedAdminMessages($conn, $chat_id, $user_id) {
         
         // Get messages
         $messages_sql = "
-            SELECT am.*, u.full_name, u.username
+            SELECT am.*, u.username as sender_name, u.full_name as sender_full_name
             FROM admin_messages_archive am
             JOIN users u ON am.sender_id = u.user_id
             WHERE am.chat_id = ?
@@ -425,9 +390,7 @@ function getArchivedAdminMessages($conn, $chat_id, $user_id) {
         $stmt2 = sqlsrv_query($conn, $messages_sql, $messages_params);
         
         if (!$stmt2) {
-            $errors = sqlsrv_errors();
-            error_log("Messages query error: " . print_r($errors, true));
-            throw new Exception("Messages query failed: " . print_r($errors, true));
+            throw new Exception("Prepare failed: " . print_r(sqlsrv_errors(), true));
         }
         
         $messages = [];
@@ -439,7 +402,7 @@ function getArchivedAdminMessages($conn, $chat_id, $user_id) {
         return [
             "success" => true,
             "messages" => $messages,
-            "chat_info" => $chat  // This now contains all the user info
+            "chat_info" => $chat
         ];
         
     } catch (Exception $e) {
